@@ -577,10 +577,16 @@ def coa():
     if 'user_id' not in session:
         return redirect(url_for('login'))
     
+    # Debug: Check accounts count
+    count_result = execute_query("SELECT COUNT(*) as count FROM accounts", fetch=True)
+    print(f"DEBUG: Total accounts in database: {count_result[0]['count'] if count_result else 0}")
+    
     accounts = execute_query(
         "SELECT code, name, type, normal_balance FROM accounts ORDER BY code", 
         fetch=True
     )
+    
+    print(f"DEBUG: Accounts fetched: {accounts}")
     
     return render_template('coa.html', accounts=accounts)
 
