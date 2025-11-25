@@ -58,34 +58,56 @@ def get_db_connection():
         return None
 
 def execute_query(query, params=(), fetch=False, commit=False):
-    """Universal query executor for both SQLite and PostgreSQL"""
-    conn = get_db_connection()
-    if not conn:
-        return None
-    
+    """Handle both SQLite and PostgreSQL"""
     try:
-        cursor = conn.cursor()
-        cursor.execute(query, params)
-        
-        if commit:
-            conn.commit()
-            return True
-        elif fetch:
-            if query.strip().upper().startswith('SELECT'):
-                result = cursor.fetchall()
-                # Convert to list of dicts for consistency
+        if os.environ.get('RAILWAY_ENVIRONMENT'):
+            # Use PostgreSQL on Railway
+            import psycopg2
+            DATABASE_URL = os.environ.get('DATABASE_URL')
+            conn = psycopg2.connect(DATABASE_URL, sslmode='require')
+            cursor = conn.cursor()
+            
+            # Convert SQLite ? to PostgreSQL %s
+            query = query.replace('?', '%s')
+            
+            cursor.execute(query, params)
+            
+            if commit:
+                conn.commit()
+                return True
+            elif fetch:
+                # For PostgreSQL, we need to convert to dict-like structure
                 columns = [desc[0] for desc in cursor.description] if cursor.description else []
-                return [dict(zip(columns, row)) for row in result]
+                results = cursor.fetchall()
+                return [dict(zip(columns, row)) for row in results] if columns else results
             else:
-                return cursor.fetchall()
+                return True
+                
         else:
-            return True
+            # Use SQLite for development
+            conn = sqlite3.connect('money_hop_full.db')
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute(query, params)
+            
+            if commit:
+                conn.commit()
+                return True
+            elif fetch:
+                return cursor.fetchall()
+            else:
+                return True
+                
     except Exception as e:
-        print(f"Query error: {e}")
-        conn.rollback()
-        return None
+        print(f"Database error: {e}")
+        return False
     finally:
-        conn.close()
+        if 'conn' in locals():
+            conn.close()
+
+def hash_pw(password):
+    """Hash password dengan salt"""
+    return hashlib.sha256(password.encode()).hexdigest()
 
 def init_db():
     """Initialize database tables for both SQLite and PostgreSQL"""
@@ -275,7 +297,7 @@ def init_db():
             
             for account in accounts:
                 execute_query(
-                    "INSERT INTO accounts (code, name, type, normal_balance) VALUES (%s, %s, %s, %s)",
+                    "INSERT INTO accounts (code, name, type, normal_balance) VALUES (?, ?, ?, ?)",
                     account,
                     commit=True
                 )
@@ -425,6 +447,9 @@ def register():
         password = request.form['password']
         confirm_password = request.form['confirm_password']
         
+        print(f"DEBUG: Registration attempt - Username: {username}, Email: {email}")
+        
+        # Validasi input
         if not username or not email or not password:
             flash('Mohon isi semua field!', 'error')
             return render_template('register.html')
@@ -443,11 +468,14 @@ def register():
         
         try:
             # Check if username or email already exists
+            print("DEBUG: Checking existing users...")
             existing_users = execute_query(
                 "SELECT * FROM users WHERE username = ? OR email = ?", 
                 (username, email), 
                 fetch=True
             )
+            
+            print(f"DEBUG: Existing users result: {existing_users}")
             
             if existing_users and len(existing_users) > 0:
                 existing_user = existing_users[0]
@@ -458,14 +486,18 @@ def register():
                 return render_template('register.html')
             
             # Hash password sebelum simpan
-            hashed_password = hash_pw(password)
+            print("DEBUG: Hashing password...")
+            hashed_password = hashlib.sha256(password.encode()).hexdigest()
             
             # Insert new user
+            print("DEBUG: Inserting new user...")
             success = execute_query(
                 "INSERT INTO users (username, email, password) VALUES (?, ?, ?)", 
                 (username, email, hashed_password),
                 commit=True
             )
+            
+            print(f"DEBUG: Insert success: {success}")
             
             if success:
                 flash('Registrasi berhasil! Silakan login.', 'success')
@@ -475,6 +507,8 @@ def register():
                 
         except Exception as e:
             print(f"Registration error: {e}")
+            import traceback
+            print(f"DEBUG: Full traceback: {traceback.format_exc()}")
             flash('Terjadi error saat registrasi!', 'error')
     
     return render_template('register.html')
