@@ -1,0 +1,206 @@
+{% extends "base.html" %}
+
+{% block title %}Neraca Saldo Disesuaikan{% endblock %}
+
+{% block content %}
+<div class="header">
+    <h1>Neraca Saldo Disesuaikan</h1>
+    <p>Daftar saldo akun setelah penyesuaian - Per {{ today }}</p>
+</div>
+
+<div class="card">
+    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+        <h2>Neraca Saldo (Adjusted)</h2>
+        <div>
+            <a href="{{ url_for('trial_balance') }}" class="btn btn-outline">
+                <i class="fas fa-arrow-left"></i>
+                Neraca Saldo Sebelum Penyesuaian
+            </a>
+            <button onclick="window.print()" class="btn btn-primary" style="margin-left: 0.5rem;">
+                <i class="fas fa-print"></i>
+                Cetak
+            </button>
+        </div>
+    </div>
+    <div class="card-body">
+        <div class="alert alert-warning">
+            <i class="fas fa-info-circle"></i>
+            <strong>Neraca Saldo Disesuaikan</strong> adalah daftar saldo setelah jurnal penyesuaian diposting. 
+            Ini adalah dasar untuk menyusun Laporan Laba Rugi dan Neraca.
+        </div>
+        
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Kode Akun</th>
+                    <th>Nama Akun</th>
+                    <th>Debit</th>
+                    <th>Kredit</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for account in accounts %}
+                {% if account.debit != 0 or account.credit != 0 %}
+                <tr>
+                    <td>{{ account.code }}</td>
+                    <td>
+                        {{ account.name }}
+                        <span class="badge badge-{{ 
+                            'primary' if account.type == 'Asset' else
+                            'warning' if account.type == 'Liability' else
+                            'success' if account.type == 'Equity' else
+                            'info' if account.type == 'Revenue' else
+                            'danger'
+                        }}" style="margin-left: 0.5rem;">
+                            {{ account.type }}
+                        </span>
+                    </td>
+                    <td class="text-money">
+                        {% if account.debit > 0 %}
+                            {{ account.debit | money_format }}
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                    <td class="text-money">
+                        {% if account.credit > 0 %}
+                            {{ account.credit | money_format }}
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endif %}
+                {% endfor %}
+            </tbody>
+            <tfoot>
+                <tr style="background: var(--bg-tertiary); font-weight: bold;">
+                    <td colspan="2" style="text-align: center;">TOTAL</td>
+                    <td class="text-money">{{ total_debit | money_format }}</td>
+                    <td class="text-money">{{ total_credit | money_format }}</td>
+                </tr>
+                <tr>
+                    <td colspan="4" style="text-align: center; padding: 1rem;">
+                        {% if total_debit == total_credit %}
+                        <div class="alert alert-success">
+                            <i class="fas fa-check-circle"></i>
+                            <strong>BALANCE!</strong> Total Debit ({{ total_debit | money_format }}) = Total Kredit ({{ total_credit | money_format }})
+                        </div>
+                        {% else %}
+                        <div class="alert alert-error">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            <strong>NOT BALANCED!</strong> Total Debit ({{ total_debit | money_format }}) ≠ Total Kredit ({{ total_credit | money_format }})
+                            Selisih: {{ (total_debit - total_credit) | abs | money_format }}
+                        </div>
+                        {% endif %}
+                    </td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2>Proses Siklus Akuntansi</h2>
+    </div>
+    <div class="card-body">
+        <div style="display: flex; overflow-x: auto; gap: 1rem; padding: 1rem 0;">
+            <div class="process-step">
+                <div class="step-number">1</div>
+                <div class="step-title">Transaksi</div>
+                <div class="step-desc">Jurnal Umum</div>
+            </div>
+            <div class="process-step">
+                <div class="step-number">2</div>
+                <div class="step-title">Buku Besar</div>
+                <div class="step-desc">Posting</div>
+            </div>
+            <div class="process-step">
+                <div class="step-number">3</div>
+                <div class="step-title">Neraca Saldo</div>
+                <div class="step-desc">Sebelum Penyesuaian</div>
+            </div>
+            <div class="process-step active">
+                <div class="step-number">4</div>
+                <div class="step-title">Jurnal Penyesuaian</div>
+                <div class="step-desc">Adjusting Entries</div>
+            </div>
+            <div class="process-step">
+                <div class="step-number">5</div>
+                <div class="step-title">Neraca Saldo</div>
+                <div class="step-desc">Setelah Penyesuaian</div>
+            </div>
+            <div class="process-step">
+                <div class="step-number">6</div>
+                <div class="step-title">Laporan Keuangan</div>
+                <div class="step-desc">Laba Rugi & Neraca</div>
+            </div>
+            <div class="process-step">
+                <div class="step-number">7</div>
+                <div class="step-title">Jurnal Penutup</div>
+                <div class="step-desc">Closing Entries</div>
+            </div>
+        </div>
+        
+        <div style="text-align: center; margin-top: 2rem;">
+            <a href="{{ url_for('adjusting_entries') }}" class="btn btn-warning" style="margin-right: 0.5rem;">
+                <i class="fas fa-adjust"></i>
+                Buat Jurnal Penyesuaian
+            </a>
+            <a href="{{ url_for('reports') }}" class="btn btn-info" style="margin-right: 0.5rem;">
+                <i class="fas fa-file-alt"></i>
+                Lihat Laporan Keuangan
+            </a>
+            <a href="{{ url_for('closing_entries') }}" class="btn btn-danger">
+                <i class="fas fa-lock"></i>
+                Buat Jurnal Penutup
+            </a>
+        </div>
+    </div>
+</div>
+
+<style>
+.process-step {
+    flex: 0 0 auto;
+    width: 120px;
+    text-align: center;
+    padding: 1rem;
+    border: 2px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-secondary);
+}
+
+.process-step.active {
+    border-color: var(--accent-primary);
+    background: var(--accent-primary);
+    color: white;
+}
+
+.step-number {
+    font-size: 1.5rem;
+    font-weight: bold;
+    margin-bottom: 0.5rem;
+}
+
+.step-title {
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+}
+
+.step-desc {
+    font-size: 0.75rem;
+    opacity: 0.8;
+}
+
+@media print {
+    .navbar, .card-header .btn, .alert, .card:last-child {
+        display: none !important;
+    }
+    .card {
+        box-shadow: none !important;
+        border: 1px solid #000 !important;
+    }
+}
+</style>
+{% endblock %}

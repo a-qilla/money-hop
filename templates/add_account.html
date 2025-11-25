@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+
+{% block title %}Tambah Akun Baru{% endblock %}
+
+{% block content %}
+<div class="header">
+    <h1>Tambah Akun Baru</h1>
+    <p>Tambahkan akun ke Chart of Accounts</p>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2>Form Tambah Akun</h2>
+    </div>
+    <div class="card-body">
+        <form method="POST">
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Kode Akun</label>
+                    <input type="text" name="code" class="form-control" required 
+                           placeholder="Contoh: 1-1000, 5-5100" pattern="\d+-\d+">
+                    <small style="color: var(--text-muted); font-size: 0.75rem;">
+                        Format: angka-angka (contoh: 1-1000 untuk Kas, 5-5100 untuk Beban)
+                    </small>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Nama Akun</label>
+                    <input type="text" name="name" class="form-control" required 
+                           placeholder="Nama akun (contoh: Kas, Piutang, Pendapatan Jasa)">
+                </div>
+            </div>
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Tipe Akun</label>
+                    <select name="type" class="form-control" required>
+                        <option value="">Pilih Tipe Akun</option>
+                        <option value="Asset">Asset (Aset)</option>
+                        <option value="Liability">Liability (Kewajiban)</option>
+                        <option value="Equity">Equity (Ekuitas)</option>
+                        <option value="Revenue">Revenue (Pendapatan)</option>
+                        <option value="Expense">Expense (Beban)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Normal Balance</label>
+                    <select name="normal_balance" class="form-control" required>
+                        <option value="">Pilih Normal Balance</option>
+                        <option value="Debit">Debit</option>
+                        <option value="Credit">Credit</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle"></i>
+                    <strong>Panduan:</strong><br>
+                    • <strong>Asset & Expense</strong>: Normal Balance Debit<br>
+                    • <strong>Liability, Equity, Revenue</strong>: Normal Balance Credit
+                </div>
+            </div>
+            
+            <button type="submit" class="btn btn-success">
+                <i class="fas fa-plus-circle"></i>
+                Tambah Akun
+            </button>
+            
+            <a href="{{ url_for('coa') }}" class="btn btn-outline" style="margin-left: 0.5rem;">
+                <i class="fas fa-arrow-left"></i>
+                Kembali ke Chart of Accounts
+            </a>
+        </form>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2>Contoh Kode Akun Standar</h2>
+    </div>
+    <div class="card-body">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+            <div>
+                <h4>Aset (1-xxxx)</h4>
+                <ul style="color: var(--text-secondary); font-size: 0.875rem;">
+                    <li>1-1000: Kas</li>
+                    <li>1-1100: Bank</li>
+                    <li>1-1200: Piutang</li>
+                    <li>1-1300: Persediaan</li>
+                </ul>
+            </div>
+            <div>
+                <h4>Kewajiban (2-xxxx)</h4>
+                <ul style="color: var(--text-secondary); font-size: 0.875rem;">
+                    <li>2-2000: Hutang Usaha</li>
+                    <li>2-2100: Hutang Bank</li>
+                </ul>
+            </div>
+            <div>
+                <h4>Ekuitas (3-xxxx)</h4>
+                <ul style="color: var(--text-secondary); font-size: 0.875rem;">
+                    <li>3-3000: Modal</li>
+                    <li>3-3100: Laba Ditahan</li>
+                </ul>
+            </div>
+            <div>
+                <h4>Pendapatan (4-xxxx)</h4>
+                <ul style="color: var(--text-secondary); font-size: 0.875rem;">
+                    <li>4-4000: Pendapatan Jasa</li>
+                    <li>4-4100: Pendapatan Lain</li>
+                </ul>
+            </div>
+            <div>
+                <h4>Beban (5-xxxx)</h4>
+                <ul style="color: var(--text-secondary); font-size: 0.875rem;">
+                    <li>5-5000: Beban Gaji</li>
+                    <li>5-5100: Beban Sewa</li>
+                    <li>5-5200: Beban Listrik</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

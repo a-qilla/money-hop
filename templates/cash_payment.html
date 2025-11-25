@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+
+{% block title %}Cash Payment Journal{% endblock %}
+
+{% block content %}
+<div class="header">
+    <h1>Cash Payment Journal</h1>
+    <p>Pencatatan pengeluaran kas</p>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2>Input Cash Payment</h2>
+    </div>
+    <div class="card-body">
+        <form method="POST">
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Nomor Payment</label>
+                    <input type="text" name="payment_no" class="form-control" required 
+                           value="CP{{ "%03d" % (payment_count + 1) }}">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Tanggal</label>
+                    <input type="date" name="date" class="form-control" required 
+                           value="{{ today }}">
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Deskripsi</label>
+                <input type="text" name="description" class="form-control" required 
+                       placeholder="Deskripsi pembayaran">
+            </div>
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Akun Beban/Asset</label>
+                    <select name="account_code" class="form-control" required>
+                        <option value="">Pilih Akun</option>
+                        {% for account in accounts %}
+                        <option value="{{ account[0] }}">{{ account[0] }} - {{ account[1] }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Jumlah</label>
+                    <input type="number" name="amount" class="form-control" required 
+                           step="0.01" min="0.01" placeholder="Jumlah pembayaran">
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle"></i>
+                    <strong>Pencatatan Otomatis:</strong> Kas akan dikredit, akun beban/asset akan didebit
+                </div>
+            </div>
+            
+            <button type="submit" class="btn btn-primary">
+                <i class="fas fa-money-bill-wave"></i>
+                Simpan Cash Payment
+            </button>
+        </form>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2>Riwayat Cash Payments</h2>
+    </div>
+    <div class="card-body">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>No. Payment</th>
+                    <th>Tanggal</th>
+                    <th>Deskripsi</th>
+                    <th>Akun</th>
+                    <th>Jumlah</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for payment in payments %}
+                <tr>
+                    <td>{{ payment[0] }}</td>
+                    <td>{{ payment[1] }}</td>
+                    <td>{{ payment[2] }}</td>
+                    <td>{{ payment[3] }}</td>
+                    <td class="text-money">{{ payment[4] | money_format }}</td>
+                    <td>
+                        <a href="{{ url_for('delete_cash_payment', payment_no=payment[0]) }}" 
+                        class="btn btn-danger btn-sm" 
+                        onclick="return confirm('Hapus cash payment {{ payment[0] }}?')">
+                            <i class="fas fa-trash"></i> Hapus
+                        </a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

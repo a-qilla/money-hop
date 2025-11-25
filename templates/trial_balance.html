@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+
+{% block title %}Neraca Saldo{% endblock %}
+
+{% block content %}
+<div class="header">
+    <h1>Neraca Saldo</h1>
+    <p>Daftar saldo akun sebelum penyesuaian - Per {{ today }}</p>
+</div>
+
+<div class="card">
+    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+        <h2>Neraca Saldo (Unadjusted)</h2>
+        <div>
+            <a href="{{ url_for('adjusted_trial_balance') }}" class="btn btn-outline">
+                <i class="fas fa-adjust"></i>
+                Lihat Neraca Saldo Disesuaikan
+            </a>
+            <button onclick="window.print()" class="btn btn-primary" style="margin-left: 0.5rem;">
+                <i class="fas fa-print"></i>
+                Cetak
+            </button>
+        </div>
+    </div>
+    <div class="card-body">
+        <div class="alert alert-info">
+            <i class="fas fa-info-circle"></i>
+            <strong>Neraca Saldo</strong> adalah daftar saldo semua akun di Buku Besar pada tanggal tertentu, 
+            sebelum dilakukan penyesuaian. Total debit harus sama dengan total kredit.
+        </div>
+        
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Kode Akun</th>
+                    <th>Nama Akun</th>
+                    <th>Debit</th>
+                    <th>Kredit</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for account in accounts %}
+                {% if account.debit != 0 or account.credit != 0 %}
+                <tr>
+                    <td>{{ account.code }}</td>
+                    <td>
+                        {{ account.name }}
+                        <span class="badge badge-{{ 
+                            'primary' if account.type == 'Asset' else
+                            'warning' if account.type == 'Liability' else
+                            'success' if account.type == 'Equity' else
+                            'info' if account.type == 'Revenue' else
+                            'danger'
+                        }}" style="margin-left: 0.5rem;">
+                            {{ account.type }}
+                        </span>
+                    </td>
+                    <td class="text-money">
+                        {% if account.debit > 0 %}
+                            {{ account.debit | money_format }}
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                    <td class="text-money">
+                        {% if account.credit > 0 %}
+                            {{ account.credit | money_format }}
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endif %}
+                {% endfor %}
+            </tbody>
+            <tfoot>
+                <tr style="background: var(--bg-tertiary); font-weight: bold;">
+                    <td colspan="2" style="text-align: center;">TOTAL</td>
+                    <td class="text-money">{{ total_debit | money_format }}</td>
+                    <td class="text-money">{{ total_credit | money_format }}</td>
+                </tr>
+                <tr>
+                    <td colspan="4" style="text-align: center; padding: 1rem;">
+                        {% if total_debit == total_credit %}
+                        <div class="alert alert-success">
+                            <i class="fas fa-check-circle"></i>
+                            <strong>BALANCE!</strong> Total Debit ({{ total_debit | money_format }}) = Total Kredit ({{ total_credit | money_format }})
+                        </div>
+                        {% else %}
+                        <div class="alert alert-error">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            <strong>NOT BALANCED!</strong> Total Debit ({{ total_debit | money_format }}) ≠ Total Kredit ({{ total_credit | money_format }})
+                            Selisih: {{ (total_debit - total_credit) | abs | money_format }}
+                        </div>
+                        {% endif %}
+                    </td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2>Keterangan</h2>
+    </div>
+    <div class="card-body">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem;">
+            <div>
+                <h4>Fungsi Neraca Saldo:</h4>
+                <ul style="color: var(--text-secondary);">
+                    <li>Memeriksa keseimbangan debit dan kredit</li>
+                    <li>Mendeteksi kesalahan pencatatan</li>
+                    <li>Sebagai dasar pembuatan jurnal penyesuaian</li>
+                    <li>Menyiapkan data untuk laporan keuangan</li>
+                </ul>
+            </div>
+            <div>
+                <h4>Jika Tidak Balance:</h4>
+                <ul style="color: var(--text-secondary);">
+                    <li>Periksa kembali jurnal umum</li>
+                    <li>Pastikan posting ke buku besar benar</li>
+                    <li>Cek transaksi yang terlewat</li>
+                    <li>Verifikasi saldo awal akun</li>
+                </ul>
+            </div>
+            <div>
+                <h4>Langkah Selanjutnya:</h4>
+                <ul style="color: var(--text-secondary);">
+                    <li>Buat <strong>Jurnal Penyesuaian</strong> jika perlu</li>
+                    <li>Buat <strong>Neraca Saldo Disesuaikan</strong></li>
+                    <li>Susun <strong>Laporan Keuangan</strong></li>
+                    <li>Buat <strong>Jurnal Penutup</strong></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+@media print {
+    .navbar, .card-header .btn, .alert {
+        display: none !important;
+    }
+    .card {
+        box-shadow: none !important;
+        border: 1px solid #000 !important;
+    }
+}
+</style>
+{% endblock %}

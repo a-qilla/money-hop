@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="header">
+    <h1>Dashboard</h1>
+    <p>Ringkasan keuangan bisnis Anda</p>
+</div>
+
+<div class="dashboard-cards">
+    <div class="dashboard-card revenue">
+        <div class="card-icon">💰</div>
+        <div class="card-title">Total Pendapatan</div>
+        <div class="card-value">{{ revenue }}</div>
+    </div>
+    
+    <div class="dashboard-card expense">
+        <div class="card-icon">💸</div>
+        <div class="card-title">Total Beban</div>
+        <div class="card-value">{{ expense }}</div>
+    </div>
+    
+    <div class="dashboard-card profit">
+        <div class="card-icon">📈</div>
+        <div class="card-title">Laba Bersih</div>
+        <div class="card-value">{{ profit }}</div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2>Menu Utama</h2>
+    </div>
+    <div class="card-body">
+        <div class="menu-grid">
+            <a href="{{ url_for('journal') }}" class="menu-card">
+                <div class="menu-icon">🧾</div>
+                <div class="menu-title">Jurnal Umum</div>
+                <div class="menu-desc">Catat transaksi harian</div>
+            </a>
+            
+            <a href="{{ url_for('coa') }}" class="menu-card">
+                <div class="menu-icon">📊</div>
+                <div class="menu-title">Chart of Accounts</div>
+                <div class="menu-desc">Kelola akun keuangan</div>
+            </a>
+            
+            <a href="{{ url_for('inventory') }}" class="menu-card">
+                <div class="menu-icon">📦</div>
+                <div class="menu-title">Inventory</div>
+                <div class="menu-desc">Kelola stok barang</div>
+            </a>
+            
+            <a href="{{ url_for('reports') }}" class="menu-card">
+                <div class="menu-icon">📈</div>
+                <div class="menu-title">Laporan Keuangan</div>
+                <div class="menu-desc">Lihat laporan lengkap</div>
+            </a>
+            
+            <a href="{{ url_for('ledger') }}" class="menu-card">
+                <div class="menu-icon">📒</div>
+                <div class="menu-title">Buku Besar</div>
+                <div class="menu-desc">Lihat detail transaksi per akun</div>
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}

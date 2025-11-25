@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block title %}Jurnal Umum{% endblock %}
+
+{% block content %}
+<div class="header">
+    <h1>Jurnal Umum</h1>
+    <p>Catat transaksi harian</p>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2>Input Jurnal Baru</h2>
+    </div>
+    <div class="card-body">
+        <form method="POST">
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Nomor Entri</label>
+                    <input type="text" name="entry_no" class="form-control" required 
+                           value="J{{ "%03d" % (journal_count + 1) }}">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Tanggal</label>
+                    <input type="date" name="date" class="form-control" required 
+                           value="{{ today }}">
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Deskripsi</label>
+                <input type="text" name="description" class="form-control" required 
+                       placeholder="Deskripsi transaksi">
+            </div>
+            
+            <div class="journal-entries">
+                <div class="journal-header">
+                    <div style="flex: 2;">Akun</div>
+                    <div style="flex: 1;">Debit</div>
+                    <div style="flex: 1;">Kredit</div>
+                </div>
+                
+                {% for i in range(4) %}
+                <div class="journal-row">
+                    <div style="flex: 2;">
+                        <select name="account_code[]" class="form-control">
+                            <option value="">Pilih Akun</option>
+                            {% for account in accounts %}
+                            <option value="{{ account[0] }}">{{ account[0] }} - {{ account[1] }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div style="flex: 1;">
+                        <input type="number" name="debit[]" class="form-control" step="0.01" min="0" value="0">
+                    </div>
+                    <div style="flex: 1;">
+                        <input type="number" name="credit[]" class="form-control" step="0.01" min="0" value="0">
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            
+            <button type="submit" class="btn btn-primary">Simpan Jurnal</button>
+        </form>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2>Riwayat Jurnal</h2>
+    </div>
+    <div class="card-body">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>No. Entri</th>
+                    <th>Tanggal</th>
+                    <th>Deskripsi</th>
+                    <th>Detail</th>
+                    <th>Aksi</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for journal in journals %}
+                <tr>
+                    <td>{{ journal[0] }}</td>
+                    <td>{{ journal[1] }}</td>
+                    <td>{{ journal[2] }}</td>
+                    <td>{{ journal[3] or 'No details' }}</td>
+                    <td>
+                        <a href="{{ url_for('delete_journal', entry_no=journal[0]) }}" 
+                           class="btn btn-danger btn-sm" 
+                           onclick="return confirm('Hapus jurnal {{ journal[0] }}?')">
+                            <i class="fas fa-trash"></i> Hapus
+                        </a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

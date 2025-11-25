@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block title %}Chart of Accounts{% endblock %}
+
+{% block content %}
+<div class="header">
+    <h1>Chart of Accounts</h1>
+    <p>Daftar akun keuangan</p>
+</div>
+
+<div class="card">
+    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+        <h2>Daftar Akun</h2>
+        <a href="{{ url_for('add_account') }}" class="btn btn-success">
+            <i class="fas fa-plus-circle"></i>
+            Tambah Akun Baru
+        </a>
+    </div>
+    <div class="card-body">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Kode</th>
+                    <th>Nama Akun</th>
+                    <th>Tipe</th>
+                    <th>Normal Balance</th>
+                    <th>Saldo</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for account in accounts %}
+                <tr>
+                    <td>{{ account[0] }}</td>
+                    <td>{{ account[1] }}</td>
+                    <td>
+                        <span class="badge badge-{{ 
+                            'primary' if account[2] == 'Asset' else
+                            'warning' if account[2] == 'Liability' else
+                            'success' if account[2] == 'Equity' else
+                            'info' if account[2] == 'Revenue' else
+                            'danger'
+                        }}">
+                            {{ account[2] }}
+                        </span>
+                    </td>
+                    <td>{{ account[3] }}</td>
+                    <td class="text-money">
+                        {{ money_format(get_account_balance(account[0])) }}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

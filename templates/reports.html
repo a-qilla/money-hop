@@ -1,0 +1,309 @@
+{% extends "base.html" %}
+
+{% block title %}Laporan Keuangan{% endblock %}
+
+{% block content %}
+<div class="header">
+    <h1>Laporan Keuangan</h1>
+    <p>Laporan lengkap keuangan bisnis</p>
+</div>
+
+<!-- Navigation Tabs -->
+<div class="card">
+    <div class="card-header">
+        <div class="report-tabs">
+            <button class="tab-button active" onclick="openTab('income-statement')">
+                <i class="fas fa-chart-line"></i>
+                Laporan Laba Rugi
+            </button>
+            <button class="tab-button" onclick="openTab('equity-statement')">
+                <i class="fas fa-users"></i>
+                Laporan Perubahan Ekuitas
+            </button>
+            <button class="tab-button" onclick="openTab('balance-sheet')">
+                <i class="fas fa-balance-scale"></i>
+                Neraca
+            </button>
+            <button class="tab-button" onclick="printAllReports()" style="margin-left: auto;">
+                <i class="fas fa-print"></i>
+                Cetak Semua Laporan
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Laporan Laba Rugi -->
+<div id="income-statement" class="tab-content active">
+    <div class="card">
+        <div class="card-header">
+            <h2>Laporan Laba Rugi</h2>
+            <p>Periode Berjalan</p>
+        </div>
+        <div class="card-body">
+            <div class="report-section">
+                <h3>PENDAPATAN</h3>
+                {% for revenue in revenues %}
+                {% if revenue[2] != 0 %}
+                <div class="report-row">
+                    <div>{{ revenue[1] }}</div>
+                    <div class="text-money">{{ money_format(revenue[2]) }}</div>
+                </div>
+                {% endif %}
+                {% endfor %}
+                <div class="report-total">
+                    <div>Total Pendapatan</div>
+                    <div class="text-money">{{ money_format(total_revenue) }}</div>
+                </div>
+            </div>
+            
+            <div class="report-section">
+                <h3>BEBAN</h3>
+                {% for expense in expenses %}
+                {% if expense[2] != 0 %}
+                <div class="report-row">
+                    <div>{{ expense[1] }}</div>
+                    <div class="text-money">{{ money_format(expense[2]) }}</div>
+                </div>
+                {% endif %}
+                {% endfor %}
+                <div class="report-total">
+                    <div>Total Beban</div>
+                    <div class="text-money">{{ money_format(total_expense) }}</div>
+                </div>
+            </div>
+            
+            <div class="report-section">
+                <div class="report-grand-total">
+                    <div>LABA BERSIH</div>
+                    <div class="text-money">{{ money_format(net_income) }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Laporan Perubahan Ekuitas -->
+<div id="equity-statement" class="tab-content">
+    <div class="card">
+        <div class="card-header">
+            <h2>Laporan Perubahan Ekuitas</h2>
+            <p>Periode Berjalan</p>
+        </div>
+        <div class="card-body">
+            <div class="report-section">
+                <h3>MODAL AWAL</h3>
+                <div class="report-row">
+                    <div>Saldo Modal Awal Periode</div>
+                    <div class="text-money">{{ money_format(beginning_equity) }}</div>
+                </div>
+            </div>
+
+            <div class="report-section">
+                <h3>PERUBAHAN SELAMA PERIODE</h3>
+                <div class="report-row">
+                    <div>Laba Bersih Periode Berjalan</div>
+                    <div class="text-money text-success">+ {{ money_format(net_income) }}</div>
+                </div>
+                
+                {% if additional_investments > 0 %}
+                <div class="report-row">
+                    <div>Investasi Tambahan Pemilik</div>
+                    <div class="text-money text-success">+ {{ money_format(additional_investments) }}</div>
+                </div>
+                {% endif %}
+                
+                {% if owner_withdrawals > 0 %}
+                <div class="report-row">
+                    <div>Prive / Penarikan Pemilik</div>
+                    <div class="text-money text-danger">- {{ money_format(owner_withdrawals) }}</div>
+                </div>
+                {% endif %}
+                
+                <div class="report-total">
+                    <div>Total Perubahan Ekuitas</div>
+                    <div class="text-money">{{ money_format(net_income + additional_investments - owner_withdrawals) }}</div>
+                </div>
+            </div>
+
+            <div class="report-section">
+                <div class="report-grand-total">
+                    <div>MODAL AKHIR</div>
+                    <div class="text-money">{{ money_format(ending_equity) }}</div>
+                </div>
+            </div>
+
+            <div class="alert alert-info" style="margin-top: 2rem;">
+                <i class="fas fa-info-circle"></i>
+                <strong>Rumus Perubahan Ekuitas:</strong><br>
+                Modal Akhir = Modal Awal + Laba Bersih + Investasi Tambahan - Penarikan Pemilik
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Neraca -->
+<div id="balance-sheet" class="tab-content">
+    <div class="card">
+        <div class="card-header">
+            <h2>Neraca</h2>
+            <p>Per {{ today }}</p>
+        </div>
+        <div class="card-body">
+            <div class="balance-sheet">
+                <div class="balance-column">
+                    <h3>ASET</h3>
+                    {% for asset in assets %}
+                    {% if asset[2] != 0 %}
+                    <div class="report-row">
+                        <div>{{ asset[1] }}</div>
+                        <div class="text-money">{{ money_format(asset[2]) }}</div>
+                    </div>
+                    {% endif %}
+                    {% endfor %}
+                    <div class="report-total">
+                        <div>Total Aset</div>
+                        <div class="text-money">{{ money_format(total_assets) }}</div>
+                    </div>
+                </div>
+                
+                <div class="balance-column">
+                    <h3>LIABILITAS</h3>
+                    {% for liability in liabilities %}
+                    {% if liability[2] != 0 %}
+                    <div class="report-row">
+                        <div>{{ liability[1] }}</div>
+                        <div class="text-money">{{ money_format(liability[2]) }}</div>
+                    </div>
+                    {% endif %}
+                    {% endfor %}
+                    <div class="report-total">
+                        <div>Total Liabilitas</div>
+                        <div class="text-money">{{ money_format(total_liabilities) }}</div>
+                    </div>
+                    
+                    <h3>EKUITAS</h3>
+                    {% for equity in equities %}
+                    {% if equity[2] != 0 %}
+                    <div class="report-row">
+                        <div>{{ equity[1] }}</div>
+                        <div class="text-money">{{ money_format(equity[2]) }}</div>
+                    </div>
+                    {% endif %}
+                    {% endfor %}
+                    <div class="report-total">
+                        <div>Total Ekuitas</div>
+                        <div class="text-money">{{ money_format(total_equity) }}</div>
+                    </div>
+                    
+                    <div class="report-grand-total">
+                        <div>Total Liabilitas + Ekuitas</div>
+                        <div class="text-money">{{ money_format(total_liabilities + total_equity) }}</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Balance Check -->
+            <div style="text-align: center; margin-top: 2rem;">
+                {% if total_assets == (total_liabilities + total_equity) %}
+                <div class="alert alert-success">
+                    <i class="fas fa-check-circle"></i>
+                    <strong>NERACA SEIMBANG!</strong> Total Aset ({{ money_format(total_assets) }}) = Total Liabilitas + Ekuitas ({{ money_format(total_liabilities + total_equity) }})
+                </div>
+                {% else %}
+                <div class="alert alert-error">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <strong>NERACA TIDAK SEIMBANG!</strong> Total Aset ({{ money_format(total_assets) }}) ≠ Total Liabilitas + Ekuitas ({{ money_format(total_liabilities + total_equity) }})
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Summary Card -->
+<div class="card">
+    <div class="card-header">
+        <h2>Ringkasan Keuangan</h2>
+    </div>
+    <div class="card-body">
+        <div class="dashboard-cards">
+            <div class="dashboard-card revenue">
+                <div class="card-icon">💰</div>
+                <div class="card-title">Total Pendapatan</div>
+                <div class="card-value">{{ money_format(total_revenue) }}</div>
+            </div>
+            
+            <div class="dashboard-card expense">
+                <div class="card-icon">💸</div>
+                <div class="card-title">Total Beban</div>
+                <div class="card-value">{{ money_format(total_expense) }}</div>
+            </div>
+            
+            <div class="dashboard-card profit">
+                <div class="card-icon">📈</div>
+                <div class="card-title">Laba Bersih</div>
+                <div class="card-value">{{ money_format(net_income) }}</div>
+            </div>
+
+            <div class="dashboard-card asset">
+                <div class="card-icon">🏦</div>
+                <div class="card-title">Total Aset</div>
+                <div class="card-value">{{ money_format(total_assets) }}</div>
+            </div>
+
+            <div class="dashboard-card liability">
+                <div class="card-icon">📋</div>
+                <div class="card-title">Total Liabilitas</div>
+                <div class="card-value">{{ money_format(total_liabilities) }}</div>
+            </div>
+
+            <div class="dashboard-card equity">
+                <div class="card-icon">👥</div>
+                <div class="card-title">Total Ekuitas</div>
+                <div class="card-value">{{ money_format(total_equity) }}</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function openTab(tabName) {
+    // Hide all tab contents
+    var tabContents = document.getElementsByClassName('tab-content');
+    for (var i = 0; i < tabContents.length; i++) {
+        tabContents[i].classList.remove('active');
+    }
+    
+    // Remove active class from all tab buttons
+    var tabButtons = document.getElementsByClassName('tab-button');
+    for (var i = 0; i < tabButtons.length; i++) {
+        tabButtons[i].classList.remove('active');
+    }
+    
+    // Show the specific tab content and activate the button
+    document.getElementById(tabName).classList.add('active');
+    event.currentTarget.classList.add('active');
+}
+
+function printAllReports() {
+    window.print();
+}
+
+// Set today's date for the report
+document.addEventListener('DOMContentLoaded', function() {
+    var today = new Date().toLocaleDateString('id-ID', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+    });
+    
+    // Update date elements
+    var dateElements = document.querySelectorAll('.card-header p');
+    dateElements.forEach(function(el) {
+        if (el.textContent.includes('{{ today }}')) {
+            el.textContent = el.textContent.replace('{{ today }}', today);
+        }
+    });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+
+{% block title %}Login{% endblock %}
+
+{% block auth_content %}
+<div class="auth-background">
+    <div class="login-container card">
+        <div class="card-header">
+            <img src="{{ url_for('static', filename='images/logo.svg') }}" alt="Money Hop Logo" class="auth-logo">
+            <h1>Money Hop</h1>
+            <p>Sistem Akuntansi Modern</p>
+        </div>
+        
+        <div class="card-body">
+            <h2 style="text-align: center; margin-bottom: 1.5rem; color: var(--text-primary);">
+                Masuk ke Akun Anda
+            </h2>
+            
+            <form method="POST">
+                <div class="form-group">
+                    <label class="form-label">Email atau Username</label>
+                    <input type="text" name="login_input" class="form-control" required 
+                           placeholder="Masukkan email atau username">
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Password</label>
+                    <input type="password" name="password" class="form-control" required 
+                           placeholder="Masukkan password">
+                </div>
+                
+                <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 1rem;">
+                    <i class="fas fa-sign-in-alt"></i>
+                    Masuk
+                </button>
+            </form>
+
+            <div style="text-align: center; margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border-color);">
+                <span style="color: var(--text-secondary);">Belum punya akun? </span>
+                <a href="{{ url_for('register') }}" style="color: var(--accent-primary); font-weight: bold; text-decoration: none;">
+                    Daftar di sini
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.auth-background {
+    background-image: url("{{ url_for('static', filename='images/auth-bg.png') }}");
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+    position: relative;
+}
+
+/* Overlay untuk membuat text lebih readable */
+.auth-background::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.3);
+    z-index: 1;
+}
+
+.login-container {
+    max-width: 400px;
+    width: 100%;
+    background: #0f172a;
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+    position: relative;
+    z-index: 2;
+    overflow: hidden;
+}
+
+.card-header {
+    background: var(--accent-primary);
+    color: #0f172a;
+    text-align: center;
+    padding: 2rem;
+}
+
+.auth-logo {
+    width: 80px;
+    height: 80px;
+    margin-bottom: 1rem;
+    object-fit: contain;
+}
+
+.card-header h1 {
+    margin: 0.5rem 0 0.25rem 0;
+    font-size: 1.5rem;
+}
+
+.card-header p {
+    margin: 0;
+    opacity: 0.9;
+    font-size: 0.9rem;
+}
+
+.card-body {
+    padding: 2rem;
+}
+
+.card-body h2 {
+    text-align: center;
+    margin-bottom: 1.5rem;
+    color: var(--text-primary);
+    font-size: 1.25rem;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .auth-background {
+        padding: 1rem;
+    }
+    
+    .login-container {
+        margin: 0;
+    }
+    
+    .card-body {
+        padding: 1.5rem;
+    }
+}
+</style>
+{% endblock %}

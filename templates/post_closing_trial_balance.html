@@ -1,0 +1,293 @@
+{% extends "base.html" %}
+
+{% block title %}Neraca Saldo Penutup{% endblock %}
+
+{% block content %}
+<div class="header">
+    <h1>Neraca Saldo Penutup</h1>
+    <p>Daftar saldo akun permanen setelah jurnal penutup - Per {{ today }}</p>
+</div>
+
+<div class="card">
+    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+        <h2>Neraca Saldo Penutup (Post-Closing Trial Balance)</h2>
+        <div>
+            <a href="{{ url_for('trial_balance') }}" class="btn btn-outline">
+                <i class="fas fa-arrow-left"></i>
+                Neraca Saldo Biasa
+            </a>
+            <button onclick="window.print()" class="btn btn-primary" style="margin-left: 0.5rem;">
+                <i class="fas fa-print"></i>
+                Cetak
+            </button>
+        </div>
+    </div>
+    <div class="card-body">
+        <div class="alert alert-warning">
+            <i class="fas fa-info-circle"></i>
+            <strong>Neraca Saldo Penutup</strong> hanya berisi akun-akun permanen (Aset, Kewajiban, Ekuitas) 
+            setelah proses penutupan. Akun nominal (Pendapatan dan Beban) harus memiliki saldo nol.
+        </div>
+
+        <!-- Closing Status Check -->
+        {% if all_temporary_zero %}
+        <div class="alert alert-success">
+            <i class="fas fa-check-circle"></i>
+            <strong>PENUTUPAN BERHASIL!</strong> Semua akun nominal (pendapatan dan beban) memiliki saldo nol.
+        </div>
+        {% else %}
+        <div class="alert alert-error">
+            <i class="fas fa-exclamation-triangle"></i>
+            <strong>PENUTUPAN BELUM SEMPURNA!</strong> Beberapa akun nominal masih memiliki saldo.
+            <a href="{{ url_for('closing_entries') }}" class="btn btn-danger btn-sm" style="margin-left: 1rem;">
+                <i class="fas fa-lock"></i>
+                Buat Jurnal Penutup
+            </a>
+        </div>
+
+        <!-- Show temporary accounts with non-zero balances -->
+        <div class="card" style="background: rgba(239, 68, 68, 0.1); border: 1px solid var(--accent-danger);">
+            <div class="card-header">
+                <h3 style="color: var(--accent-danger);">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    Akun Nominal dengan Saldo Tidak Nol
+                </h3>
+            </div>
+            <div class="card-body">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Kode Akun</th>
+                            <th>Nama Akun</th>
+                            <th>Saldo</th>
+                            <th>Tipe</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for account in temporary_accounts_with_balance %}
+                        <tr>
+                            <td>{{ account[0] }}</td>
+                            <td>{{ account[1] }}</td>
+                            <td class="text-money">{{ money_format(account[2]) }}</td>
+                            <td>
+                                <span class="badge badge-{{ 'info' if account[2] > 0 else 'danger' }}">
+                                    {{ 'Pendapatan' if account[2] > 0 else 'Beban' }}
+                                </span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Post-Closing Trial Balance Table -->
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Kode Akun</th>
+                    <th>Nama Akun</th>
+                    <th>Debit</th>
+                    <th>Kredit</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for account in accounts %}
+                {% if account.debit != 0 or account.credit != 0 %}
+                <tr>
+                    <td>{{ account.code }}</td>
+                    <td>
+                        {{ account.name }}
+                        <span class="badge badge-{{ 
+                            'primary' if account.type == 'Asset' else
+                            'warning' if account.type == 'Liability' else
+                            'success' if account.type == 'Equity'
+                        }}" style="margin-left: 0.5rem;">
+                            {{ account.type }}
+                        </span>
+                    </td>
+                    <td class="text-money">
+                        {% if account.debit > 0 %}
+                            {{ account.debit | money_format }}
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                    <td class="text-money">
+                        {% if account.credit > 0 %}
+                            {{ account.credit | money_format }}
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endif %}
+                {% endfor %}
+            </tbody>
+            <tfoot>
+                <tr style="background: var(--bg-tertiary); font-weight: bold;">
+                    <td colspan="2" style="text-align: center;">TOTAL</td>
+                    <td class="text-money">{{ total_debit | money_format }}</td>
+                    <td class="text-money">{{ total_credit | money_format }}</td>
+                </tr>
+                <tr>
+                    <td colspan="4" style="text-align: center; padding: 1rem;">
+                        {% if total_debit == total_credit %}
+                        <div class="alert alert-success">
+                            <i class="fas fa-check-circle"></i>
+                            <strong>BALANCE!</strong> Total Debit ({{ total_debit | money_format }}) = Total Kredit ({{ total_credit | money_format }})
+                        </div>
+                        {% else %}
+                        <div class="alert alert-error">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            <strong>NOT BALANCED!</strong> Total Debit ({{ total_debit | money_format }}) ≠ Total Kredit ({{ total_credit | money_format }})
+                            Selisih: {{ (total_debit - total_credit) | abs | money_format }}
+                        </div>
+                        {% endif %}
+                    </td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2>Siklus Akuntansi Lengkap</h2>
+    </div>
+    <div class="card-body">
+        <div style="display: flex; overflow-x: auto; gap: 1rem; padding: 1rem 0;">
+            <div class="process-step">
+                <div class="step-number">1</div>
+                <div class="step-title">Transaksi</div>
+                <div class="step-desc">Jurnal Umum</div>
+            </div>
+            <div class="process-step">
+                <div class="step-number">2</div>
+                <div class="step-title">Buku Besar</div>
+                <div class="step-desc">Posting</div>
+            </div>
+            <div class="process-step">
+                <div class="step-number">3</div>
+                <div class="step-title">Neraca Saldo</div>
+                <div class="step-desc">Sebelum Penyesuaian</div>
+            </div>
+            <div class="process-step">
+                <div class="step-number">4</div>
+                <div class="step-title">Jurnal Penyesuaian</div>
+                <div class="step-desc">Adjusting Entries</div>
+            </div>
+            <div class="process-step">
+                <div class="step-number">5</div>
+                <div class="step-title">Neraca Saldo</div>
+                <div class="step-desc">Setelah Penyesuaian</div>
+            </div>
+            <div class="process-step">
+                <div class="step-number">6</div>
+                <div class="step-title">Laporan Keuangan</div>
+                <div class="step-desc">Laba Rugi & Neraca</div>
+            </div>
+            <div class="process-step">
+                <div class="step-number">7</div>
+                <div class="step-title">Jurnal Penutup</div>
+                <div class="step-desc">Closing Entries</div>
+            </div>
+            <div class="process-step active">
+                <div class="step-number">8</div>
+                <div class="step-title">Neraca Saldo</div>
+                <div class="step-desc">Setelah Penutupan</div>
+            </div>
+        </div>
+        
+        <div style="margin-top: 2rem;">
+            <h4>Karakteristik Neraca Saldo Penutup:</h4>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem; margin-top: 1rem;">
+                <div>
+                    <h5>✅ Yang Termasuk:</h5>
+                    <ul style="color: var(--text-secondary);">
+                        <li><strong>Aset</strong> (Kas, Piutang, Persediaan, dll)</li>
+                        <li><strong>Kewajiban</strong> (Hutang, Utang Bank, dll)</li>
+                        <li><strong>Ekuitas</strong> (Modal, Laba Ditahan)</li>
+                    </ul>
+                </div>
+                <div>
+                    <h5>❌ Yang Tidak Termasuk:</h5>
+                    <ul style="color: var(--text-secondary);">
+                        <li><strong>Pendapatan</strong> (saldo harus nol)</li>
+                        <li><strong>Beban</strong> (saldo harus nol)</li>
+                        <li><strong>Prive</strong> (saldo harus nol)</li>
+                    </ul>
+                </div>
+                <div>
+                    <h5>🎯 Tujuan:</h5>
+                    <ul style="color: var(--text-secondary);">
+                        <li>Memastikan penutupan berhasil</li>
+                        <li>Mempersiapkan periode berikutnya</li>
+                        <li>Verifikasi keseimbangan permanen</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        
+        <div style="text-align: center; margin-top: 2rem;">
+            <a href="{{ url_for('closing_entries') }}" class="btn btn-warning" style="margin-right: 0.5rem;">
+                <i class="fas fa-adjust"></i>
+                Jurnal Penyesuaian
+            </a>
+            <a href="{{ url_for('closing_entries') }}" class="btn btn-danger" style="margin-right: 0.5rem;">
+                <i class="fas fa-lock"></i>
+                Jurnal Penutup
+            </a>
+            <a href="{{ url_for('reports') }}" class="btn btn-info">
+                <i class="fas fa-file-alt"></i>
+                Laporan Keuangan
+            </a>
+        </div>
+    </div>
+</div>
+
+<style>
+.process-step {
+    flex: 0 0 auto;
+    width: 120px;
+    text-align: center;
+    padding: 1rem;
+    border: 2px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-secondary);
+}
+
+.process-step.active {
+    border-color: var(--accent-primary);
+    background: var(--accent-primary);
+    color: white;
+}
+
+.step-number {
+    font-size: 1.5rem;
+    font-weight: bold;
+    margin-bottom: 0.5rem;
+}
+
+.step-title {
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+}
+
+.step-desc {
+    font-size: 0.75rem;
+    opacity: 0.8;
+}
+
+@media print {
+    .navbar, .card-header .btn, .card:last-child {
+        display: none !important;
+    }
+    .card {
+        box-shadow: none !important;
+        border: 1px solid #000 !important;
+    }
+}
+</style>
+{% endblock %}

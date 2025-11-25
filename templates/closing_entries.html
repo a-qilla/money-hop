@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+
+{% block title %}Jurnal Penutup{% endblock %}
+
+{% block content %}
+<div class="header">
+    <h1>Jurnal Penutup</h1>
+    <p>Proses penutupan akun nominal (pendapatan dan beban)</p>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2>Buat Jurnal Penutup</h2>
+    </div>
+    <div class="card-body">
+        <div class="alert alert-warning">
+            <i class="fas fa-exclamation-triangle"></i>
+            <strong>Perhatian:</strong> Jurnal penutup akan menutup semua akun pendapatan dan beban ke akun Ikhtisar Laba Rugi, 
+            kemudian memindahkan saldo ke Laba Ditahan. Pastikan semua transaksi periode ini sudah dicatat.
+        </div>
+        
+        <form method="POST">
+            <div class="form-group">
+                <label class="form-label">Periode yang akan Ditutup</label>
+                <input type="month" name="period" class="form-control" required 
+                       value="{{ current_period }}">
+                <small style="color: var(--text-muted); font-size: 0.75rem;">
+                    Pilih bulan dan tahun yang akan ditutup
+                </small>
+            </div>
+            
+            <div class="form-group">
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle"></i>
+                    <strong>Proses Penutupan:</strong><br>
+                    1. <strong>Pendapatan → Ikhtisar Laba Rugi</strong> (Debit Pendapatan, Kredit Ikhtisar LR)<br>
+                    2. <strong>Beban → Ikhtisar Laba Rugi</strong> (Kredit Beban, Debit Ikhtisar LR)<br>
+                    3. <strong>Ikhtisar LR → Laba Ditahan</strong> (Laba: Debit Ikhtisar LR, Kredit Laba Ditahan)
+                </div>
+            </div>
+            
+            <button type="submit" class="btn btn-danger" onclick="return confirm('Apakah Anda yakin ingin membuat jurnal penutup untuk periode ini?')">
+                <i class="fas fa-lock"></i>
+                Buat Jurnal Penutup
+            </button>
+        </form>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2>Riwayat Jurnal Penutup</h2>
+    </div>
+    <div class="card-body">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>No. Entri</th>
+                    <th>Tanggal</th>
+                    <th>Deskripsi</th>
+                    <th>Detail</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for entry in closing_entries %}
+                <tr>
+                    <td>{{ entry[0] }}</td>
+                    <td>{{ entry[1] }}</td>
+                    <td>{{ entry[2] }}</td>
+                    <td>{{ entry[3] or 'No details' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2>Status Akun Sebelum Penutupan</h2>
+    </div>
+    <div class="card-body">
+        <div class="form-row">
+            <div class="form-group" style="flex: 1;">
+                <h4>Pendapatan</h4>
+                <div style="max-height: 200px; overflow-y: auto;">
+                    {% set revenue_total = 0 %}
+                    {% for account in accounts %}
+                        {% if account[2] == 'Revenue' %}
+                            {% set balance = get_account_balance(account[0]) %}
+                            {% if balance != 0 %}
+                                {% set revenue_total = revenue_total + balance %}
+                                <div class="report-row">
+                                    <div>{{ account[1] }}</div>
+                                    <div class="text-money">{{ money_format(balance) }}</div>
+                                </div>
+                            {% endif %}
+                        {% endif %}
+                    {% endfor %}
+                    <div class="report-total">
+                        <div>Total Pendapatan</div>
+                        <div class="text-money">{{ money_format(revenue_total) }}</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="form-group" style="flex: 1;">
+                <h4>Beban</h4>
+                <div style="max-height: 200px; overflow-y: auto;">
+                    {% set expense_total = 0 %}
+                    {% for account in accounts %}
+                        {% if account[2] == 'Expense' %}
+                            {% set balance = get_account_balance(account[0]) %}
+                            {% if balance != 0 %}
+                                {% set expense_total = expense_total + balance %}
+                                <div class="report-row">
+                                    <div>{{ account[1] }}</div>
+                                    <div class="text-money">{{ money_format(balance) }}</div>
+                                </div>
+                            {% endif %}
+                        {% endif %}
+                    {% endfor %}
+                    <div class="report-total">
+                        <div>Total Beban</div>
+                        <div class="text-money">{{ money_format(expense_total) }}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="report-grand-total">
+            <div>LABA/RUGI BERSIH</div>
+            <div class="text-money">{{ money_format(revenue_total - expense_total) }}</div>
+        </div>
+    </div>
+</div>
+{% endblock %}
