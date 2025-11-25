@@ -1,6 +1,6 @@
-Flask==2.3.3
+﻿Flask==2.3.3
 Werkzeug==2.3.7
 Jinja2==3.1.2
 psycopg2-binary==2.9.7
 gunicorn==21.2.0
-"@ | Out-File -FilePath "requirements.txt" -Encoding utf8
+greenlet==3.0.1
