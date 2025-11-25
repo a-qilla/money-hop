@@ -8,6 +8,8 @@ import re
 import secrets
 from urllib.parse import urlencode
 import requests
+print(f"DEBUG: Railway Environment: {os.environ.get('RAILWAY_ENVIRONMENT')}")
+print(f"DEBUG: DATABASE_URL: {'Exists' if os.environ.get('DATABASE_URL') else 'Not Found'}")
 
 app = Flask(__name__)
 app.secret_key = 'money-hop-secret-key-2024'
@@ -61,25 +63,38 @@ def execute_query(query, params=(), fetch=False, commit=False):
     """Handle both SQLite and PostgreSQL"""
     try:
         if os.environ.get('RAILWAY_ENVIRONMENT'):
-            # Use PostgreSQL on Railway
+            # Use PostgreSQL on Railway - FIXED CONNECTION
             import psycopg2
             DATABASE_URL = os.environ.get('DATABASE_URL')
+            
+            if not DATABASE_URL:
+                print("ERROR: DATABASE_URL environment variable not found!")
+                return False
+            
+            # Connect menggunakan DATABASE_URL langsung
             conn = psycopg2.connect(DATABASE_URL, sslmode='require')
             cursor = conn.cursor()
             
-            # Convert SQLite ? to PostgreSQL %s
-            query = query.replace('?', '%s')
+            # Convert SQLite ? to PostgreSQL %s jika perlu
+            if '?' in query and '%s' not in query:
+                query = query.replace('?', '%s')
             
+            print(f"DEBUG: Executing query: {query} with params: {params}")
             cursor.execute(query, params)
             
             if commit:
                 conn.commit()
+                print("DEBUG: Commit successful")
                 return True
             elif fetch:
-                # For PostgreSQL, we need to convert to dict-like structure
-                columns = [desc[0] for desc in cursor.description] if cursor.description else []
-                results = cursor.fetchall()
-                return [dict(zip(columns, row)) for row in results] if columns else results
+                # For PostgreSQL, convert to dict-like structure
+                if cursor.description:
+                    columns = [desc[0] for desc in cursor.description]
+                    results = cursor.fetchall()
+                    print(f"DEBUG: Fetch results: {results}")
+                    return [dict(zip(columns, row)) for row in results]
+                else:
+                    return []
             else:
                 return True
                 
@@ -94,12 +109,15 @@ def execute_query(query, params=(), fetch=False, commit=False):
                 conn.commit()
                 return True
             elif fetch:
-                return cursor.fetchall()
+                results = cursor.fetchall()
+                return [dict(row) for row in results]
             else:
                 return True
                 
     except Exception as e:
-        print(f"Database error: {e}")
+        print(f"Database error in execute_query: {e}")
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")
         return False
     finally:
         if 'conn' in locals():
@@ -110,7 +128,8 @@ def hash_pw(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
 def init_db():
-    """Initialize database tables for both SQLite and PostgreSQL"""
+    """Initialize database tables"""
+    print("DEBUG: Initializing database...")
     try:
         if os.environ.get('RAILWAY_ENVIRONMENT'):
             # PostgreSQL table definitions
