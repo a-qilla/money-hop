@@ -785,349 +785,446 @@ def add_account():
 # ============ ADJUSTING JOURNAL ENTRIES ============
 @app.route('/adjusting_entries', methods=['GET', 'POST'])
 def adjusting_entries():
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-    
-    if request.method == 'POST':
-        entry_no = request.form['entry_no']
-        date = request.form['date']
-        description = request.form['description']
-        accounts = request.form.getlist('account_code[]')
-        debits = request.form.getlist('debit[]')
-        credits = request.form.getlist('credit[]')
-        adjustment_type = request.form['adjustment_type']
+    try:
+        if 'user_id' not in session:
+            return redirect(url_for('login'))
         
-        # Validasi debit = kredit
-        total_debit = sum(safe_float(debit) for debit in debits)
-        total_credit = sum(safe_float(credit) for credit in credits)
+        # GET accounts untuk dropdown
+        accounts = execute_query(
+            "SELECT code, name FROM accounts ORDER BY code", 
+            fetch=True
+        )
         
-        if abs(total_debit - total_credit) > 0.01:
-            flash('Total debit dan kredit harus seimbang!', 'error')
-            return redirect(url_for('adjusting_entries'))
-        
-        try:
-            # Insert adjusting journal header
-            journal_success = execute_query(
-                "INSERT INTO journals (entry_no, date, description, user_id) VALUES (?, ?, ?, ?)",
-                (entry_no, date, f"[PENYESUAIAN] {description}", session['user_id']),
-                commit=False
-            )
+        if request.method == 'POST':
+            entry_no = request.form['entry_no']
+            date = request.form['date']
+            description = request.form['description']
+            accounts_form = request.form.getlist('account_code[]')
+            debits = request.form.getlist('debit[]')
+            credits = request.form.getlist('credit[]')
+            adjustment_type = request.form.get('adjustment_type', '')
             
-            if not journal_success:
-                flash('Error menyimpan jurnal penyesuaian!', 'error')
-                return redirect(url_for('adjusting_entries'))
+            # Validasi required fields
+            if not entry_no or not date or not description:
+                flash('Mohon isi semua field yang required!', 'error')
+                return render_template('adjusting_entries.html', 
+                                     accounts=accounts,
+                                     adjusting_count=0,
+                                     today=datetime.now().strftime('%Y-%m-%d'),
+                                     adjusting_entries=[])
             
-            # Get the last inserted journal ID
-            journal_results = execute_query(
-                "SELECT id FROM journals WHERE entry_no = ? AND user_id = ? ORDER BY id DESC LIMIT 1",
-                (entry_no, session['user_id']),
-                fetch=True
-            )
+            # Validasi debit = kredit
+            total_debit = sum(safe_float(debit) for debit in debits)
+            total_credit = sum(safe_float(credit) for credit in credits)
             
-            if not journal_results or len(journal_results) == 0:
-                flash('Error mendapatkan ID jurnal!', 'error')
-                return redirect(url_for('adjusting_entries'))
+            if abs(total_debit - total_credit) > 0.01:
+                flash('Total debit dan kredit harus seimbang!', 'error')
+                return render_template('adjusting_entries.html', 
+                                     accounts=accounts,
+                                     adjusting_count=0,
+                                     today=datetime.now().strftime('%Y-%m-%d'),
+                                     adjusting_entries=[])
             
-            journal_id = journal_results[0]['id']
-            
-            # Insert journal details
-            for i, account_code in enumerate(accounts):
-                if account_code:  # Skip empty accounts
-                    detail_success = execute_query(
-                        "INSERT INTO journal_details (journal_id, account_code, debit, credit) VALUES (?, ?, ?, ?)",
-                        (journal_id, account_code, safe_float(debits[i]), safe_float(credits[i])),
+            try:
+                # Start transaction
+                execute_query("BEGIN", commit=True)
+                
+                # Insert adjusting journal header
+                journal_success = execute_query(
+                    "INSERT INTO journals (entry_no, date, description, user_id) VALUES (?, ?, ?, ?)",
+                    (entry_no, date, f"[PENYESUAIAN] {description}", session['user_id']),
+                    commit=False
+                )
+                
+                if not journal_success:
+                    execute_query("ROLLBACK", commit=True)
+                    flash('Error menyimpan jurnal penyesuaian!', 'error')
+                    return render_template('adjusting_entries.html', 
+                                         accounts=accounts,
+                                         adjusting_count=0,
+                                         today=datetime.now().strftime('%Y-%m-%d'),
+                                         adjusting_entries=[])
+                
+                # Get the last inserted journal ID
+                journal_results = execute_query(
+                    "SELECT id FROM journals WHERE entry_no = ? AND user_id = ? ORDER BY id DESC LIMIT 1",
+                    (entry_no, session['user_id']),
+                    fetch=True
+                )
+                
+                if not journal_results or len(journal_results) == 0:
+                    execute_query("ROLLBACK", commit=True)
+                    flash('Error mendapatkan ID jurnal!', 'error')
+                    return render_template('adjusting_entries.html', 
+                                         accounts=accounts,
+                                         adjusting_count=0,
+                                         today=datetime.now().strftime('%Y-%m-%d'),
+                                         adjusting_entries=[])
+                
+                journal_id = journal_results[0]['id']
+                
+                # Insert journal details untuk semua accounts
+                for i, account_code in enumerate(accounts_form):
+                    if account_code and (safe_float(debits[i]) > 0 or safe_float(credits[i]) > 0):
+                        detail_success = execute_query(
+                            "INSERT INTO journal_details (journal_id, account_code, debit, credit) VALUES (?, ?, ?, ?)",
+                            (journal_id, account_code, safe_float(debits[i]), safe_float(credits[i])),
+                            commit=False
+                        )
+                        if not detail_success:
+                            execute_query("ROLLBACK", commit=True)
+                            flash('Error menyimpan detail jurnal!', 'error')
+                            return render_template('adjusting_entries.html', 
+                                                 accounts=accounts,
+                                                 adjusting_count=0,
+                                                 today=datetime.now().strftime('%Y-%m-%d'),
+                                                 adjusting_entries=[])
+                
+                # Insert adjustment record (opsional, untuk tracking)
+                if accounts_form and len(accounts_form) > 0:
+                    adjustment_success = execute_query(
+                        "INSERT INTO adjustments (date, description, account_code, debit, credit, user_id) VALUES (?, ?, ?, ?, ?, ?)",
+                        (date, description, accounts_form[0], safe_float(debits[0]), safe_float(credits[0]), session['user_id']),
                         commit=False
                     )
-                    if not detail_success:
-                        flash('Error menyimpan detail jurnal!', 'error')
-                        return redirect(url_for('adjusting_entries'))
-            
-            # Insert adjustment record
-            adjustment_success = execute_query(
-                "INSERT INTO adjustments (date, description, account_code, debit, credit, user_id) VALUES (?, ?, ?, ?, ?, ?)",
-                (date, description, accounts[0] if accounts else '', safe_float(debits[0]), safe_float(credits[0]), session['user_id']),
-                commit=False
-            )
-            
-            if not adjustment_success:
-                flash('Error menyimpan data penyesuaian!', 'error')
-                return redirect(url_for('adjusting_entries'))
-            
-            # Commit all transactions
-            commit_success = execute_query("COMMIT", commit=True)
-            if commit_success:
-                flash('Jurnal Penyesuaian berhasil disimpan!', 'success')
-            else:
-                flash('Error commit transaksi!', 'error')
+                    
+                    if not adjustment_success:
+                        print("DEBUG: Adjustment record insert failed, but continuing...")
+                        # Continue even if adjustment record fails
                 
-        except Exception as e:
-            # Rollback on error
-            execute_query("ROLLBACK", commit=True)
-            if 'UNIQUE' in str(e) or 'IntegrityError' in str(e):
-                flash('Nomor entri sudah ada!', 'error')
-            else:
-                flash(f'Error: {str(e)}', 'error')
-    
-    # GET accounts untuk dropdown
-    accounts = execute_query(
-        "SELECT code, name FROM accounts ORDER BY code", 
-        fetch=True
-    )
+                # Commit all transactions
+                commit_success = execute_query("COMMIT", commit=True)
+                if commit_success:
+                    flash('Jurnal Penyesuaian berhasil disimpan!', 'success')
+                else:
+                    flash('Error commit transaksi!', 'error')
+                    
+            except Exception as e:
+                # Rollback on error
+                execute_query("ROLLBACK", commit=True)
+                print(f"Adjusting entries save error: {e}")
+                if 'UNIQUE' in str(e) or 'unique' in str(e).lower():
+                    flash('Nomor entri sudah ada!', 'error')
+                else:
+                    flash(f'Error menyimpan jurnal penyesuaian: {str(e)}', 'error')
+        
+        # Get adjusting entries count for auto-numbering
+        adjusting_count_results = execute_query(
+            "SELECT COUNT(*) as count FROM journals WHERE user_id = ? AND description LIKE '[PENYESUAIAN]%'", 
+            (session['user_id'],), 
+            fetch=True
+        )
+        adjusting_count = adjusting_count_results[0]['count'] if adjusting_count_results and len(adjusting_count_results) > 0 else 0
 
-    # Get adjusting entries count for auto-numbering
-    adjusting_count_results = execute_query(
-        "SELECT COUNT(*) as count FROM journals WHERE user_id = ? AND description LIKE '[PENYESUAIAN]%'", 
-        (session['user_id'],), 
-        fetch=True
-    )
-    adjusting_count = adjusting_count_results[0]['count'] if adjusting_count_results and len(adjusting_count_results) > 0 else 0
-
-    # Get adjusting entries history
-    adjusting_entries = execute_query("""
-        SELECT j.entry_no, j.date, j.description, 
-               GROUP_CONCAT(a.name || ' (D: ' || jd.debit || ', C: ' || jd.credit || ')') as details
-        FROM journals j
-        LEFT JOIN journal_details jd ON j.id = jd.journal_id
-        LEFT JOIN accounts a ON jd.account_code = a.code
-        WHERE j.user_id = ? AND j.description LIKE '[PENYESUAIAN]%'
-        GROUP BY j.id
-        ORDER BY j.date DESC, j.entry_no DESC
-        LIMIT 50
-    """, (session['user_id'],), fetch=True)
-    
-    return render_template('adjusting_entries.html', 
-                         accounts=accounts,
-                         adjusting_count=adjusting_count,
-                         today=datetime.now().strftime('%Y-%m-%d'),
-                         adjusting_entries=adjusting_entries)
+        # Get adjusting entries history
+        adjusting_entries = execute_query("""
+            SELECT j.entry_no, j.date, j.description, 
+                   STRING_AGG(a.name || ' (D: ' || jd.debit || ', C: ' || jd.credit || ')', ', ') as details
+            FROM journals j
+            LEFT JOIN journal_details jd ON j.id = jd.journal_id
+            LEFT JOIN accounts a ON jd.account_code = a.code
+            WHERE j.user_id = ? AND j.description LIKE '[PENYESUAIAN]%'
+            GROUP BY j.id, j.entry_no, j.date, j.description
+            ORDER BY j.date DESC, j.entry_no DESC
+            LIMIT 50
+        """, (session['user_id'],), fetch=True)
+        
+        return render_template('adjusting_entries.html', 
+                             accounts=accounts,
+                             adjusting_count=adjusting_count,
+                             today=datetime.now().strftime('%Y-%m-%d'),
+                             adjusting_entries=adjusting_entries or [])
+                             
+    except Exception as e:
+        print(f"Adjusting entries route error: {e}")
+        flash('Error loading adjusting entries page', 'error')
+        return render_template('adjusting_entries.html', 
+                             accounts=[],
+                             adjusting_count=0,
+                             today=datetime.now().strftime('%Y-%m-%d'),
+                             adjusting_entries=[])
 
 # ============ CLOSING JOURNAL ENTRIES ============
 @app.route('/closing_entries', methods=['GET', 'POST'])
 def closing_entries():
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-    
-    if request.method == 'POST':
-        # Get period (month and year)
-        period = request.form['period']
+    try:
+        if 'user_id' not in session:
+            return redirect(url_for('login'))
         
-        try:
-            # Calculate revenue and expense totals
-            revenue_results = execute_query("""
-                SELECT a.code, a.name, 
-                       COALESCE(SUM(jd.credit - jd.debit), 0) as balance
-                FROM accounts a
-                LEFT JOIN journal_details jd ON a.code = jd.account_code
-                LEFT JOIN journals j ON jd.journal_id = j.id
-                WHERE a.type = 'Revenue' AND j.user_id = ?
-                GROUP BY a.code
-            """, (session['user_id'],), fetch=True)
+        if request.method == 'POST':
+            # Get period (month and year)
+            period = request.form['period']
             
-            expense_results = execute_query("""
-                SELECT a.code, a.name, 
-                       COALESCE(SUM(jd.debit - jd.credit), 0) as balance
-                FROM accounts a
-                LEFT JOIN journal_details jd ON a.code = jd.account_code
-                LEFT JOIN journals j ON jd.journal_id = j.id
-                WHERE a.type = 'Expense' AND j.user_id = ?
-                GROUP BY a.code
-            """, (session['user_id'],), fetch=True)
+            if not period:
+                flash('Mohon pilih periode!', 'error')
+                return render_template('closing_entries.html',
+                                     current_period=datetime.now().strftime('%Y-%m'),
+                                     closing_entries=[])
             
-            revenues = revenue_results if revenue_results else []
-            expenses = expense_results if expense_results else []
-            
-            total_revenue = sum(row['balance'] for row in revenues)
-            total_expense = sum(row['balance'] for row in expenses)
-            net_income = total_revenue - total_expense
-            
-            # Create closing entries
-            closing_date = datetime.now().strftime('%Y-%m-%d')
-            closing_description = f"Jurnal Penutup Periode {period}"
-            
-            # 1. Close Revenue accounts to Income Summary
-            if total_revenue > 0:
-                # Insert closing journal header for revenue
-                journal_success = execute_query(
-                    "INSERT INTO journals (entry_no, date, description, user_id) VALUES (?, ?, ?, ?)",
-                    (f"CL{period}", closing_date, f"[PENUTUP] {closing_description}", session['user_id']),
-                    commit=False
-                )
+            try:
+                # Start transaction
+                execute_query("BEGIN", commit=True)
                 
-                if not journal_success:
-                    flash('Error membuat jurnal penutup revenue!', 'error')
-                    return redirect(url_for('closing_entries'))
+                # Calculate revenue and expense totals
+                revenue_results = execute_query("""
+                    SELECT a.code, a.name, 
+                           COALESCE(SUM(jd.credit - jd.debit), 0) as balance
+                    FROM accounts a
+                    LEFT JOIN journal_details jd ON a.code = jd.account_code
+                    LEFT JOIN journals j ON jd.journal_id = j.id
+                    WHERE a.type = 'Revenue' AND j.user_id = ?
+                    GROUP BY a.code, a.name
+                """, (session['user_id'],), fetch=True)
                 
-                # Get the journal ID
-                journal_results = execute_query(
-                    "SELECT id FROM journals WHERE entry_no = ? AND user_id = ? ORDER BY id DESC LIMIT 1",
-                    (f"CL{period}", session['user_id']),
-                    fetch=True
-                )
+                expense_results = execute_query("""
+                    SELECT a.code, a.name, 
+                           COALESCE(SUM(jd.debit - jd.credit), 0) as balance
+                    FROM accounts a
+                    LEFT JOIN journal_details jd ON a.code = jd.account_code
+                    LEFT JOIN journals j ON jd.journal_id = j.id
+                    WHERE a.type = 'Expense' AND j.user_id = ?
+                    GROUP BY a.code, a.name
+                """, (session['user_id'],), fetch=True)
                 
-                if not journal_results or len(journal_results) == 0:
-                    flash('Error mendapatkan ID jurnal!', 'error')
-                    return redirect(url_for('closing_entries'))
+                revenues = revenue_results if revenue_results else []
+                expenses = expense_results if expense_results else []
                 
-                journal_id = journal_results[0]['id']
+                total_revenue = sum(row['balance'] for row in revenues)
+                total_expense = sum(row['balance'] for row in expenses)
+                net_income = total_revenue - total_expense
                 
-                # Debit Revenue accounts, Credit Income Summary
-                for revenue in revenues:
-                    if revenue['balance'] > 0:
-                        detail_success = execute_query(
-                            "INSERT INTO journal_details (journal_id, account_code, debit, credit) VALUES (?, ?, ?, ?)",
-                            (journal_id, revenue['code'], revenue['balance'], 0),
-                            commit=False
-                        )
-                        if not detail_success:
-                            flash('Error menyimpan detail jurnal revenue!', 'error')
-                            return redirect(url_for('closing_entries'))
+                # Create closing entries
+                closing_date = datetime.now().strftime('%Y-%m-%d')
+                closing_description = f"Jurnal Penutup Periode {period}"
                 
-                # Credit Income Summary for total revenue
-                income_summary_success = execute_query(
-                    "INSERT INTO journal_details (journal_id, account_code, debit, credit) VALUES (?, ?, ?, ?)",
-                    (journal_id, '3-3200', 0, total_revenue),
-                    commit=False
-                )
-                if not income_summary_success:
-                    flash('Error menyimpan income summary!', 'error')
-                    return redirect(url_for('closing_entries'))
-            
-            # 2. Close Expense accounts to Income Summary
-            if total_expense > 0:
-                # Insert closing journal header for expenses
-                journal_success = execute_query(
-                    "INSERT INTO journals (entry_no, date, description, user_id) VALUES (?, ?, ?, ?)",
-                    (f"CL{period}-EXP", closing_date, f"[PENUTUP] {closing_description} - Beban", session['user_id']),
-                    commit=False
-                )
-                
-                if not journal_success:
-                    flash('Error membuat jurnal penutup expense!', 'error')
-                    return redirect(url_for('closing_entries'))
-                
-                # Get the journal ID
-                journal_results = execute_query(
-                    "SELECT id FROM journals WHERE entry_no = ? AND user_id = ? ORDER BY id DESC LIMIT 1",
-                    (f"CL{period}-EXP", session['user_id']),
-                    fetch=True
-                )
-                
-                if not journal_results or len(journal_results) == 0:
-                    flash('Error mendapatkan ID jurnal expense!', 'error')
-                    return redirect(url_for('closing_entries'))
-                
-                journal_id_exp = journal_results[0]['id']
-                
-                # Credit Expense accounts, Debit Income Summary
-                for expense in expenses:
-                    if expense['balance'] > 0:
-                        detail_success = execute_query(
-                            "INSERT INTO journal_details (journal_id, account_code, debit, credit) VALUES (?, ?, ?, ?)",
-                            (journal_id_exp, expense['code'], 0, expense['balance']),
-                            commit=False
-                        )
-                        if not detail_success:
-                            flash('Error menyimpan detail jurnal expense!', 'error')
-                            return redirect(url_for('closing_entries'))
-                
-                # Debit Income Summary for total expenses
-                income_summary_success = execute_query(
-                    "INSERT INTO journal_details (journal_id, account_code, debit, credit) VALUES (?, ?, ?, ?)",
-                    (journal_id_exp, '3-3200', total_expense, 0),
-                    commit=False
-                )
-                if not income_summary_success:
-                    flash('Error menyimpan income summary expense!', 'error')
-                    return redirect(url_for('closing_entries'))
-            
-            # 3. Close Income Summary to Retained Earnings
-            if net_income != 0:
-                # Insert closing journal header for income summary
-                journal_success = execute_query(
-                    "INSERT INTO journals (entry_no, date, description, user_id) VALUES (?, ?, ?, ?)",
-                    (f"CL{period}-INC", closing_date, f"[PENUTUP] {closing_description} - Laba", session['user_id']),
-                    commit=False
-                )
-                
-                if not journal_success:
-                    flash('Error membuat jurnal penutup income summary!', 'error')
-                    return redirect(url_for('closing_entries'))
-                
-                # Get the journal ID
-                journal_results = execute_query(
-                    "SELECT id FROM journals WHERE entry_no = ? AND user_id = ? ORDER BY id DESC LIMIT 1",
-                    (f"CL{period}-INC", session['user_id']),
-                    fetch=True
-                )
-                
-                if not journal_results or len(journal_results) == 0:
-                    flash('Error mendapatkan ID jurnal income summary!', 'error')
-                    return redirect(url_for('closing_entries'))
-                
-                journal_id_inc = journal_results[0]['id']
-                
-                if net_income > 0:
-                    # Debit Income Summary, Credit Retained Earnings (Profit)
-                    debit_success = execute_query(
-                        "INSERT INTO journal_details (journal_id, account_code, debit, credit) VALUES (?, ?, ?, ?)",
-                        (journal_id_inc, '3-3200', net_income, 0),
+                # 1. Close Revenue accounts to Income Summary
+                if total_revenue > 0:
+                    # Insert closing journal header for revenue
+                    journal_success = execute_query(
+                        "INSERT INTO journals (entry_no, date, description, user_id) VALUES (?, ?, ?, ?)",
+                        (f"CL{period}", closing_date, f"[PENUTUP] {closing_description}", session['user_id']),
                         commit=False
                     )
-                    credit_success = execute_query(
+                    
+                    if not journal_success:
+                        execute_query("ROLLBACK", commit=True)
+                        flash('Error membuat jurnal penutup revenue!', 'error')
+                        return render_template('closing_entries.html',
+                                             current_period=period,
+                                             closing_entries=[])
+                    
+                    # Get the journal ID
+                    journal_results = execute_query(
+                        "SELECT id FROM journals WHERE entry_no = ? AND user_id = ? ORDER BY id DESC LIMIT 1",
+                        (f"CL{period}", session['user_id']),
+                        fetch=True
+                    )
+                    
+                    if not journal_results or len(journal_results) == 0:
+                        execute_query("ROLLBACK", commit=True)
+                        flash('Error mendapatkan ID jurnal!', 'error')
+                        return render_template('closing_entries.html',
+                                             current_period=period,
+                                             closing_entries=[])
+                    
+                    journal_id = journal_results[0]['id']
+                    
+                    # Debit Revenue accounts, Credit Income Summary
+                    for revenue in revenues:
+                        if revenue['balance'] > 0:
+                            detail_success = execute_query(
+                                "INSERT INTO journal_details (journal_id, account_code, debit, credit) VALUES (?, ?, ?, ?)",
+                                (journal_id, revenue['code'], revenue['balance'], 0),
+                                commit=False
+                            )
+                            if not detail_success:
+                                execute_query("ROLLBACK", commit=True)
+                                flash('Error menyimpan detail jurnal revenue!', 'error')
+                                return render_template('closing_entries.html',
+                                                     current_period=period,
+                                                     closing_entries=[])
+                    
+                    # Credit Income Summary for total revenue
+                    income_summary_success = execute_query(
                         "INSERT INTO journal_details (journal_id, account_code, debit, credit) VALUES (?, ?, ?, ?)",
-                        (journal_id_inc, '3-3100', 0, net_income),
+                        (journal_id, '3-3200', 0, total_revenue),
                         commit=False
                     )
-                    if not debit_success or not credit_success:
-                        flash('Error menyimpan jurnal laba!', 'error')
-                        return redirect(url_for('closing_entries'))
+                    if not income_summary_success:
+                        execute_query("ROLLBACK", commit=True)
+                        flash('Error menyimpan income summary!', 'error')
+                        return render_template('closing_entries.html',
+                                             current_period=period,
+                                             closing_entries=[])
+                
+                # 2. Close Expense accounts to Income Summary
+                if total_expense > 0:
+                    # Insert closing journal header for expenses
+                    journal_success = execute_query(
+                        "INSERT INTO journals (entry_no, date, description, user_id) VALUES (?, ?, ?, ?)",
+                        (f"CL{period}-EXP", closing_date, f"[PENUTUP] {closing_description} - Beban", session['user_id']),
+                        commit=False
+                    )
+                    
+                    if not journal_success:
+                        execute_query("ROLLBACK", commit=True)
+                        flash('Error membuat jurnal penutup expense!', 'error')
+                        return render_template('closing_entries.html',
+                                             current_period=period,
+                                             closing_entries=[])
+                    
+                    # Get the journal ID
+                    journal_results = execute_query(
+                        "SELECT id FROM journals WHERE entry_no = ? AND user_id = ? ORDER BY id DESC LIMIT 1",
+                        (f"CL{period}-EXP", session['user_id']),
+                        fetch=True
+                    )
+                    
+                    if not journal_results or len(journal_results) == 0:
+                        execute_query("ROLLBACK", commit=True)
+                        flash('Error mendapatkan ID jurnal expense!', 'error')
+                        return render_template('closing_entries.html',
+                                             current_period=period,
+                                             closing_entries=[])
+                    
+                    journal_id_exp = journal_results[0]['id']
+                    
+                    # Credit Expense accounts, Debit Income Summary
+                    for expense in expenses:
+                        if expense['balance'] > 0:
+                            detail_success = execute_query(
+                                "INSERT INTO journal_details (journal_id, account_code, debit, credit) VALUES (?, ?, ?, ?)",
+                                (journal_id_exp, expense['code'], 0, expense['balance']),
+                                commit=False
+                            )
+                            if not detail_success:
+                                execute_query("ROLLBACK", commit=True)
+                                flash('Error menyimpan detail jurnal expense!', 'error')
+                                return render_template('closing_entries.html',
+                                                     current_period=period,
+                                                     closing_entries=[])
+                    
+                    # Debit Income Summary for total expenses
+                    income_summary_success = execute_query(
+                        "INSERT INTO journal_details (journal_id, account_code, debit, credit) VALUES (?, ?, ?, ?)",
+                        (journal_id_exp, '3-3200', total_expense, 0),
+                        commit=False
+                    )
+                    if not income_summary_success:
+                        execute_query("ROLLBACK", commit=True)
+                        flash('Error menyimpan income summary expense!', 'error')
+                        return render_template('closing_entries.html',
+                                             current_period=period,
+                                             closing_entries=[])
+                
+                # 3. Close Income Summary to Retained Earnings
+                if net_income != 0:
+                    # Insert closing journal header for income summary
+                    journal_success = execute_query(
+                        "INSERT INTO journals (entry_no, date, description, user_id) VALUES (?, ?, ?, ?)",
+                        (f"CL{period}-INC", closing_date, f"[PENUTUP] {closing_description} - Laba", session['user_id']),
+                        commit=False
+                    )
+                    
+                    if not journal_success:
+                        execute_query("ROLLBACK", commit=True)
+                        flash('Error membuat jurnal penutup income summary!', 'error')
+                        return render_template('closing_entries.html',
+                                             current_period=period,
+                                             closing_entries=[])
+                    
+                    # Get the journal ID
+                    journal_results = execute_query(
+                        "SELECT id FROM journals WHERE entry_no = ? AND user_id = ? ORDER BY id DESC LIMIT 1",
+                        (f"CL{period}-INC", session['user_id']),
+                        fetch=True
+                    )
+                    
+                    if not journal_results or len(journal_results) == 0:
+                        execute_query("ROLLBACK", commit=True)
+                        flash('Error mendapatkan ID jurnal income summary!', 'error')
+                        return render_template('closing_entries.html',
+                                             current_period=period,
+                                             closing_entries=[])
+                    
+                    journal_id_inc = journal_results[0]['id']
+                    
+                    if net_income > 0:
+                        # Debit Income Summary, Credit Retained Earnings (Profit)
+                        debit_success = execute_query(
+                            "INSERT INTO journal_details (journal_id, account_code, debit, credit) VALUES (?, ?, ?, ?)",
+                            (journal_id_inc, '3-3200', net_income, 0),
+                            commit=False
+                        )
+                        credit_success = execute_query(
+                            "INSERT INTO journal_details (journal_id, account_code, debit, credit) VALUES (?, ?, ?, ?)",
+                            (journal_id_inc, '3-3100', 0, net_income),
+                            commit=False
+                        )
+                        if not debit_success or not credit_success:
+                            execute_query("ROLLBACK", commit=True)
+                            flash('Error menyimpan jurnal laba!', 'error')
+                            return render_template('closing_entries.html',
+                                                 current_period=period,
+                                                 closing_entries=[])
+                    else:
+                        # Credit Income Summary, Debit Retained Earnings (Loss)
+                        credit_success = execute_query(
+                            "INSERT INTO journal_details (journal_id, account_code, debit, credit) VALUES (?, ?, ?, ?)",
+                            (journal_id_inc, '3-3200', 0, abs(net_income)),
+                            commit=False
+                        )
+                        debit_success = execute_query(
+                            "INSERT INTO journal_details (journal_id, account_code, debit, credit) VALUES (?, ?, ?, ?)",
+                            (journal_id_inc, '3-3100', abs(net_income), 0),
+                            commit=False
+                        )
+                        if not debit_success or not credit_success:
+                            execute_query("ROLLBACK", commit=True)
+                            flash('Error menyimpan jurnal rugi!', 'error')
+                            return render_template('closing_entries.html',
+                                                 current_period=period,
+                                                 closing_entries=[])
+                
+                # Commit all transactions
+                commit_success = execute_query("COMMIT", commit=True)
+                if commit_success:
+                    flash(f'Jurnal Penutup untuk periode {period} berhasil dibuat!', 'success')
                 else:
-                    # Credit Income Summary, Debit Retained Earnings (Loss)
-                    credit_success = execute_query(
-                        "INSERT INTO journal_details (journal_id, account_code, debit, credit) VALUES (?, ?, ?, ?)",
-                        (journal_id_inc, '3-3200', 0, abs(net_income)),
-                        commit=False
-                    )
-                    debit_success = execute_query(
-                        "INSERT INTO journal_details (journal_id, account_code, debit, credit) VALUES (?, ?, ?, ?)",
-                        (journal_id_inc, '3-3100', abs(net_income), 0),
-                        commit=False
-                    )
-                    if not debit_success or not credit_success:
-                        flash('Error menyimpan jurnal rugi!', 'error')
-                        return redirect(url_for('closing_entries'))
-            
-            # Commit all transactions
-            commit_success = execute_query("COMMIT", commit=True)
-            if commit_success:
-                flash(f'Jurnal Penutup untuk periode {period} berhasil dibuat!', 'success')
-            else:
-                flash('Error commit transaksi penutup!', 'error')
-            
-        except Exception as e:
-            # Rollback on error
-            execute_query("ROLLBACK", commit=True)
-            flash(f'Error: {str(e)}', 'error')
-    
-    # Get closing entries history
-    closing_entries = execute_query("""
-        SELECT j.entry_no, j.date, j.description, 
-               GROUP_CONCAT(a.name || ' (D: ' || jd.debit || ', C: ' || jd.credit || ')') as details
-        FROM journals j
-        LEFT JOIN journal_details jd ON j.id = jd.journal_id
-        LEFT JOIN accounts a ON jd.account_code = a.code
-        WHERE j.user_id = ? AND j.description LIKE '[PENUTUP]%'
-        GROUP BY j.id
-        ORDER BY j.date DESC, j.entry_no DESC
-        LIMIT 50
-    """, (session['user_id'],), fetch=True)
-    
-    # Get current period
-    current_period = datetime.now().strftime('%Y-%m')
-    
-    return render_template('closing_entries.html',
-                         current_period=current_period,
-                         closing_entries=closing_entries)
+                    flash('Error commit transaksi penutup!', 'error')
+                
+            except Exception as e:
+                # Rollback on error
+                execute_query("ROLLBACK", commit=True)
+                print(f"Closing entries error: {e}")
+                flash(f'Error membuat jurnal penutup: {str(e)}', 'error')
+        
+        # Get closing entries history
+        closing_entries = execute_query("""
+            SELECT j.entry_no, j.date, j.description, 
+                   STRING_AGG(a.name || ' (D: ' || jd.debit || ', C: ' || jd.credit || ')', ', ') as details
+            FROM journals j
+            LEFT JOIN journal_details jd ON j.id = jd.journal_id
+            LEFT JOIN accounts a ON jd.account_code = a.code
+            WHERE j.user_id = ? AND j.description LIKE '[PENUTUP]%'
+            GROUP BY j.id, j.entry_no, j.date, j.description
+            ORDER BY j.date DESC, j.entry_no DESC
+            LIMIT 50
+        """, (session['user_id'],), fetch=True)
+        
+        # Get current period
+        current_period = datetime.now().strftime('%Y-%m')
+        
+        return render_template('closing_entries.html',
+                             current_period=current_period,
+                             closing_entries=closing_entries or [])
+                             
+    except Exception as e:
+        print(f"Closing entries route error: {e}")
+        flash('Error loading closing entries page', 'error')
+        return render_template('closing_entries.html',
+                             current_period=datetime.now().strftime('%Y-%m'),
+                             closing_entries=[])
 
 # ============ UPDATE DATABASE SCHEMA ============
 def init_db():
@@ -1627,19 +1724,41 @@ def inventory():
 
 @app.route('/reports')
 def reports():
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-    
     try:
+        if 'user_id' not in session:
+            return redirect(url_for('login'))
+        
+        # Helper function to get account balance
+        def get_account_balance(account_code):
+            try:
+                result = execute_query("""
+                    SELECT COALESCE(SUM(
+                        CASE 
+                            WHEN a.normal_balance = 'Debit' THEN jd.debit - jd.credit
+                            ELSE jd.credit - jd.debit
+                        END
+                    ), 0) as balance
+                    FROM journal_details jd
+                    JOIN journals j ON jd.journal_id = j.id
+                    JOIN accounts a ON jd.account_code = a.code
+                    WHERE jd.account_code = ? AND j.user_id = ?
+                """, (account_code, session['user_id']), fetch=True)
+                
+                return result[0]['balance'] if result and len(result) > 0 else 0
+            except Exception as e:
+                print(f"Error getting balance for {account_code}: {e}")
+                return 0
+        
         # Get revenue accounts with balances
         revenues = execute_query("""
             SELECT a.code, a.name, 
                    COALESCE((SELECT COALESCE(SUM(jd.credit - jd.debit), 0) 
                     FROM journal_details jd 
                     JOIN journals j ON jd.journal_id = j.id
-                    WHERE jd.account_code = a.code AND j.user_id = %s), 0) as balance
+                    WHERE jd.account_code = a.code AND j.user_id = ?), 0) as balance
             FROM accounts a
             WHERE a.type = 'Revenue'
+            ORDER BY a.code
         """, (session['user_id'],), fetch=True)
         
         # Get expense accounts with balances
@@ -1648,9 +1767,10 @@ def reports():
                    COALESCE((SELECT COALESCE(SUM(jd.debit - jd.credit), 0) 
                     FROM journal_details jd 
                     JOIN journals j ON jd.journal_id = j.id
-                    WHERE jd.account_code = a.code AND j.user_id = %s), 0) as balance
+                    WHERE jd.account_code = a.code AND j.user_id = ?), 0) as balance
             FROM accounts a
             WHERE a.type = 'Expense'
+            ORDER BY a.code
         """, (session['user_id'],), fetch=True)
         
         # Calculate totals
@@ -1660,29 +1780,56 @@ def reports():
         
         # Get asset accounts with balances
         asset_accounts = execute_query(
-            "SELECT code, name, type FROM accounts WHERE type = 'Asset' ORDER BY code",
+            "SELECT code, name, type, normal_balance FROM accounts WHERE type = 'Asset' ORDER BY code",
             fetch=True
         )
-        assets = [(row['code'], row['name'], get_account_balance(row['code'])) for row in asset_accounts] if asset_accounts else []
+        assets = []
+        if asset_accounts:
+            for row in asset_accounts:
+                balance = get_account_balance(row['code'])
+                assets.append({
+                    'code': row['code'],
+                    'name': row['name'], 
+                    'balance': balance,
+                    'normal_balance': row['normal_balance']
+                })
         
         # Get liability accounts with balances
         liability_accounts = execute_query(
-            "SELECT code, name, type FROM accounts WHERE type = 'Liability' ORDER BY code",
+            "SELECT code, name, type, normal_balance FROM accounts WHERE type = 'Liability' ORDER BY code",
             fetch=True
         )
-        liabilities = [(row['code'], row['name'], get_account_balance(row['code'])) for row in liability_accounts] if liability_accounts else []
+        liabilities = []
+        if liability_accounts:
+            for row in liability_accounts:
+                balance = get_account_balance(row['code'])
+                liabilities.append({
+                    'code': row['code'],
+                    'name': row['name'],
+                    'balance': balance,
+                    'normal_balance': row['normal_balance']
+                })
         
         # Get equity accounts with balances
         equity_accounts = execute_query(
-            "SELECT code, name, type FROM accounts WHERE type = 'Equity' ORDER BY code",
+            "SELECT code, name, type, normal_balance FROM accounts WHERE type = 'Equity' ORDER BY code",
             fetch=True
         )
-        equities = [(row['code'], row['name'], get_account_balance(row['code'])) for row in equity_accounts] if equity_accounts else []
+        equities = []
+        if equity_accounts:
+            for row in equity_accounts:
+                balance = get_account_balance(row['code'])
+                equities.append({
+                    'code': row['code'],
+                    'name': row['name'],
+                    'balance': balance,
+                    'normal_balance': row['normal_balance']
+                })
         
-        # Calculate balance sheet totals
-        total_assets = sum(balance for _, _, balance in assets)
-        total_liabilities = sum(balance for _, _, balance in liabilities)
-        total_equity = sum(balance for _, _, balance in equities)
+        # Calculate balance sheet totals (absolute values for display)
+        total_assets = sum(abs(item['balance']) for item in assets)
+        total_liabilities = sum(abs(item['balance']) for item in liabilities)
+        total_equity = sum(abs(item['balance']) for item in equities)
         
         # Equity Change Report
         beginning_equity = get_account_balance('3-3000')  # Modal account
@@ -1692,18 +1839,24 @@ def reports():
             SELECT COALESCE(SUM(jd.credit - jd.debit), 0) as investments
             FROM journal_details jd
             JOIN journals j ON jd.journal_id = j.id
-            WHERE jd.account_code = '3-3000' AND j.user_id = %s
+            WHERE jd.account_code = '3-3000' AND j.user_id = ?
         """, (session['user_id'],), fetch=True)
-        additional_investments = investments_result[0]['investments'] if investments_result else 0
+        additional_investments = investments_result[0]['investments'] if investments_result and len(investments_result) > 0 else 0
         
-        # Get owner's withdrawals (prive)
+        # Get owner's withdrawals (prive) - check if prive account exists
         withdrawals_result = execute_query("""
-            SELECT COALESCE(SUM(jd.debit - jd.credit), 0) as withdrawals
+            SELECT COALESCE(SUM(
+                CASE 
+                    WHEN a.normal_balance = 'Debit' THEN jd.debit - jd.credit
+                    ELSE jd.credit - jd.debit
+                END
+            ), 0) as withdrawals
             FROM journal_details jd
             JOIN journals j ON jd.journal_id = j.id
-            WHERE jd.account_code = '3-3300' AND j.user_id = %s
+            JOIN accounts a ON jd.account_code = a.code
+            WHERE jd.account_code = '3-3300' AND j.user_id = ?
         """, (session['user_id'],), fetch=True)
-        owner_withdrawals = withdrawals_result[0]['withdrawals'] if withdrawals_result else 0
+        owner_withdrawals = abs(withdrawals_result[0]['withdrawals']) if withdrawals_result and len(withdrawals_result) > 0 else 0
         
         # Calculate ending equity
         ending_equity = beginning_equity + net_income + additional_investments - owner_withdrawals
@@ -1728,8 +1881,26 @@ def reports():
                              
     except Exception as e:
         print(f"Reports error: {e}")
-        flash('Error loading reports', 'error')
-        return redirect(url_for('dashboard'))
+        import traceback
+        print(f"Reports traceback: {traceback.format_exc()}")
+        flash('Error loading financial reports', 'error')
+        return render_template('reports.html',
+                             revenues=[],
+                             expenses=[],
+                             total_revenue=0,
+                             total_expense=0,
+                             net_income=0,
+                             assets=[],
+                             liabilities=[],
+                             equities=[],
+                             total_assets=0,
+                             total_liabilities=0,
+                             total_equity=0,
+                             beginning_equity=0,
+                             additional_investments=0,
+                             owner_withdrawals=0,
+                             ending_equity=0,
+                             today=datetime.now().strftime('%Y-%m-%d'))
     
 @app.route('/ledger')
 def ledger():
