@@ -1355,7 +1355,7 @@ def init_db():
             
             for account in default_accounts:
                 execute_query(
-                    "INSERT INTO accounts (code, name, type, normal_balance, balance, user_id) VALUES (?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO accounts (code, name, type, normal_balance, balance, user_id) VALUES (%s, %s, %s, %s, %s, %s)",
                     account,
                     commit=True
                 )
