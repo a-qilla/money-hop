@@ -324,7 +324,9 @@ def init_db():
         print("Database initialized successfully!")
         
     except Exception as e:
-        print(f"Error initializing database: {e}")
+        print(f"DEBUG: Error initializing database: {e}")
+        import traceback
+        print(f"DEBUG: Traceback: {traceback.format_exc()}")
 
 # Panggil init_db saat app start
 init_db()
@@ -584,108 +586,152 @@ def coa():
 
 @app.route('/journal', methods=['GET', 'POST'])
 def journal():
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-    
-    if request.method == 'POST':
-        entry_no = request.form['entry_no']
-        date = request.form['date']
-        description = request.form['description']
-        accounts = request.form.getlist('account_code[]')
-        debits = request.form.getlist('debit[]')
-        credits = request.form.getlist('credit[]')
+    try:
+        if 'user_id' not in session:
+            return redirect(url_for('login'))
         
-        total_debit = sum(safe_float(debit) for debit in debits)
-        total_credit = sum(safe_float(credit) for credit in credits)
+        # Get accounts for dropdown
+        accounts = execute_query(
+            "SELECT code, name FROM accounts ORDER BY code", 
+            fetch=True
+        )
         
-        if abs(total_debit - total_credit) > 0.01:
-            flash('Total debit dan kredit harus seimbang!', 'error')
-            return redirect(url_for('journal'))
-        
-        try:
-            # Insert journal header
-            journal_success = execute_query(
-                "INSERT INTO journals (entry_no, date, description, user_id) VALUES (?, ?, ?, ?)",
-                (entry_no, date, description, session['user_id']),
-                commit=False  # We'll commit after details
-            )
+        if request.method == 'POST':
+            entry_no = request.form['entry_no']
+            date = request.form['date']
+            description = request.form['description']
+            accounts_form = request.form.getlist('account_code[]')
+            debits = request.form.getlist('debit[]')
+            credits = request.form.getlist('credit[]')
             
-            if not journal_success:
-                flash('Error menyimpan jurnal!', 'error')
-                return redirect(url_for('journal'))
+            # Validate required fields
+            if not entry_no or not date or not description:
+                flash('Mohon isi semua field yang required!', 'error')
+                return render_template('journal.html', 
+                                     accounts=accounts,
+                                     journal_count=0,
+                                     today=datetime.now().strftime('%Y-%m-%d'),
+                                     journals=[])
             
-            # Get the last inserted journal ID
-            journal_results = execute_query(
-                "SELECT id FROM journals WHERE entry_no = ? AND user_id = ? ORDER BY id DESC LIMIT 1",
-                (entry_no, session['user_id']),
-                fetch=True
-            )
+            # Calculate totals
+            total_debit = sum(safe_float(debit) for debit in debits)
+            total_credit = sum(safe_float(credit) for credit in credits)
             
-            if not journal_results or len(journal_results) == 0:
-                flash('Error mendapatkan ID jurnal!', 'error')
-                return redirect(url_for('journal'))
+            # Check debit-credit balance
+            if abs(total_debit - total_credit) > 0.01:
+                flash('Total debit dan kredit harus seimbang!', 'error')
+                return render_template('journal.html', 
+                                     accounts=accounts,
+                                     journal_count=0,
+                                     today=datetime.now().strftime('%Y-%m-%d'),
+                                     journals=[])
             
-            journal_id = journal_results[0]['id']
-            
-            # Insert journal details
-            for i, account_code in enumerate(accounts):
-                if account_code:
-                    detail_success = execute_query(
-                        "INSERT INTO journal_details (journal_id, account_code, debit, credit) VALUES (?, ?, ?, ?)",
-                        (journal_id, account_code, safe_float(debits[i]), safe_float(credits[i])),
-                        commit=False
-                    )
-                    if not detail_success:
-                        flash('Error menyimpan detail jurnal!', 'error')
-                        return redirect(url_for('journal'))
-            
-            # Commit all transactions
-            commit_success = execute_query("COMMIT", commit=True)
-            if commit_success:
-                flash('Jurnal berhasil disimpan!', 'success')
-            else:
-                flash('Error commit transaksi!', 'error')
+            try:
+                # Start transaction
+                execute_query("BEGIN", commit=True)
                 
-        except Exception as e:
-            # Rollback on error
-            execute_query("ROLLBACK", commit=True)
-            if 'UNIQUE' in str(e) or 'IntegrityError' in str(e):
-                flash('Nomor entri sudah ada!', 'error')
-            else:
-                flash(f'Error: {str(e)}', 'error')
-    
-    # Get accounts for dropdown
-    accounts = execute_query(
-        "SELECT code, name FROM accounts ORDER BY code", 
-        fetch=True
-    )
-    
-    # Get journal count
-    journal_count_results = execute_query(
-        "SELECT COUNT(*) as count FROM journals WHERE user_id = ?", 
-        (session['user_id'],), 
-        fetch=True
-    )
-    journal_count = journal_count_results[0]['count'] if journal_count_results and len(journal_count_results) > 0 else 0
-    
-    # Get recent journals
-    journals = execute_query("""
-        SELECT j.entry_no, j.date, j.description, 
-               GROUP_CONCAT(a.name || ' (D: ' || jd.debit || ', C: ' || jd.credit || ')') as details
-        FROM journals j
-        LEFT JOIN journal_details jd ON j.id = jd.journal_id
-        LEFT JOIN accounts a ON jd.account_code = a.code
-        WHERE j.user_id = ?
-        GROUP BY j.id
-        ORDER BY j.date DESC, j.entry_no DESC
-        LIMIT 50
-    """, (session['user_id'],), fetch=True)
-    
-    return render_template('journal.html', 
-                         accounts=accounts,
-                         journal_count=journal_count,
-                         today=datetime.now().strftime('%Y-%m-%d'),
-                         journals=journals)
+                # Insert journal header
+                journal_success = execute_query(
+                    "INSERT INTO journals (entry_no, date, description, user_id) VALUES (?, ?, ?, ?)",
+                    (entry_no, date, description, session['user_id']),
+                    commit=False
+                )
+                
+                if not journal_success:
+                    execute_query("ROLLBACK", commit=True)
+                    flash('Error menyimpan jurnal!', 'error')
+                    return render_template('journal.html', 
+                                         accounts=accounts,
+                                         journal_count=0,
+                                         today=datetime.now().strftime('%Y-%m-%d'),
+                                         journals=[])
+                
+                # Get the last inserted journal ID
+                journal_results = execute_query(
+                    "SELECT id FROM journals WHERE entry_no = ? AND user_id = ? ORDER BY id DESC LIMIT 1",
+                    (entry_no, session['user_id']),
+                    fetch=True
+                )
+                
+                if not journal_results or len(journal_results) == 0:
+                    execute_query("ROLLBACK", commit=True)
+                    flash('Error mendapatkan ID jurnal!', 'error')
+                    return render_template('journal.html', 
+                                         accounts=accounts,
+                                         journal_count=0,
+                                         today=datetime.now().strftime('%Y-%m-%d'),
+                                         journals=[])
+                
+                journal_id = journal_results[0]['id']
+                
+                # Insert journal details
+                for i, account_code in enumerate(accounts_form):
+                    if account_code and (safe_float(debits[i]) > 0 or safe_float(credits[i]) > 0):
+                        detail_success = execute_query(
+                            "INSERT INTO journal_details (journal_id, account_code, debit, credit) VALUES (?, ?, ?, ?)",
+                            (journal_id, account_code, safe_float(debits[i]), safe_float(credits[i])),
+                            commit=False
+                        )
+                        if not detail_success:
+                            execute_query("ROLLBACK", commit=True)
+                            flash('Error menyimpan detail jurnal!', 'error')
+                            return render_template('journal.html', 
+                                                 accounts=accounts,
+                                                 journal_count=0,
+                                                 today=datetime.now().strftime('%Y-%m-%d'),
+                                                 journals=[])
+                
+                # Commit all transactions
+                commit_success = execute_query("COMMIT", commit=True)
+                if commit_success:
+                    flash('Jurnal berhasil disimpan!', 'success')
+                else:
+                    flash('Error commit transaksi!', 'error')
+                    
+            except Exception as e:
+                # Rollback on error
+                execute_query("ROLLBACK", commit=True)
+                print(f"Journal save error: {e}")
+                if 'UNIQUE' in str(e) or 'unique' in str(e).lower():
+                    flash('Nomor entri sudah ada!', 'error')
+                else:
+                    flash(f'Error menyimpan jurnal: {str(e)}', 'error')
+        
+        # Get journal count
+        journal_count_results = execute_query(
+            "SELECT COUNT(*) as count FROM journals WHERE user_id = ?", 
+            (session['user_id'],), 
+            fetch=True
+        )
+        journal_count = journal_count_results[0]['count'] if journal_count_results and len(journal_count_results) > 0 else 0
+        
+        # Get recent journals
+        journals = execute_query("""
+            SELECT j.entry_no, j.date, j.description, 
+                   GROUP_CONCAT(a.name || ' (D: ' || jd.debit || ', C: ' || jd.credit || ')') as details
+            FROM journals j
+            LEFT JOIN journal_details jd ON j.id = jd.journal_id
+            LEFT JOIN accounts a ON jd.account_code = a.code
+            WHERE j.user_id = ?
+            GROUP BY j.id, j.entry_no, j.date, j.description
+            ORDER BY j.date DESC, j.entry_no DESC
+            LIMIT 50
+        """, (session['user_id'],), fetch=True)
+        
+        return render_template('journal.html', 
+                             accounts=accounts,
+                             journal_count=journal_count,
+                             today=datetime.now().strftime('%Y-%m-%d'),
+                             journals=journals or [])
+                             
+    except Exception as e:
+        print(f"Journal route error: {e}")
+        flash('Error loading journal page', 'error')
+        return render_template('journal.html', 
+                             accounts=[],
+                             journal_count=0,
+                             today=datetime.now().strftime('%Y-%m-%d'),
+                             journals=[])
 
 @app.route('/add_account', methods=['GET', 'POST'])
 def add_account():
@@ -1084,88 +1130,145 @@ def closing_entries():
                          closing_entries=closing_entries)
 
 # ============ UPDATE DATABASE SCHEMA ============
-# Update your init_db() function to include adjustments table
 def init_db():
-    # Users table
-    execute_query('''
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username VARCHAR(50) UNIQUE NOT NULL,
-            email VARCHAR(100) UNIQUE NOT NULL,
-            password VARCHAR(100) NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''', commit=True)
+    """Initialize database tables for PostgreSQL on Railway"""
+    print("DEBUG: Initializing database tables...")
     
-    # Accounts table (Chart of Accounts)
-    execute_query('''
-        CREATE TABLE IF NOT EXISTS accounts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            code VARCHAR(20) UNIQUE NOT NULL,
-            name VARCHAR(100) NOT NULL,
-            type VARCHAR(50) NOT NULL,
-            normal_balance VARCHAR(10) NOT NULL,
-            balance DECIMAL(15,2) DEFAULT 0,
-            user_id INTEGER,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''', commit=True)
-    
-    # Journals table
-    execute_query('''
-        CREATE TABLE IF NOT EXISTS journals (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            entry_no VARCHAR(50) NOT NULL,
-            date DATE NOT NULL,
-            description TEXT,
-            user_id INTEGER NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(entry_no, user_id)
-        )
-    ''', commit=True)
-    
-    # Journal Details table
-    execute_query('''
-        CREATE TABLE IF NOT EXISTS journal_details (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            journal_id INTEGER NOT NULL,
-            account_code VARCHAR(20) NOT NULL,
-            debit DECIMAL(15,2) DEFAULT 0,
-            credit DECIMAL(15,2) DEFAULT 0,
-            FOREIGN KEY (journal_id) REFERENCES journals(id),
-            FOREIGN KEY (account_code) REFERENCES accounts(code)
-        )
-    ''', commit=True)
-    
-    # Adjustments table
-    execute_query('''
-        CREATE TABLE IF NOT EXISTS adjustments (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            date TEXT NOT NULL,
-            description TEXT NOT NULL,
-            account_code TEXT NOT NULL,
-            debit REAL DEFAULT 0,
-            credit REAL DEFAULT 0,
-            user_id INTEGER NOT NULL,
-            FOREIGN KEY (account_code) REFERENCES accounts(code),
-            FOREIGN KEY (user_id) REFERENCES users(id)
-        )
-    ''', commit=True)
-    
-    # Add Income Summary account if it doesn't exist
-    income_summary_results = execute_query(
-        "SELECT COUNT(*) as count FROM accounts WHERE code = '3-3200'", 
-        fetch=True
-    )
-    
-    if income_summary_results and income_summary_results[0]['count'] == 0:
-        execute_query(
-            "INSERT INTO accounts (code, name, type, normal_balance) VALUES (?, ?, ?, ?)",
-            ('3-3200', 'Ikhtisar Laba Rugi', 'Equity', 'Credit'),
-            commit=True
-        )
-    
-    print("Database initialized successfully!")
+    try:
+        # Users table
+        execute_query('''
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                username VARCHAR(50) UNIQUE NOT NULL,
+                email VARCHAR(100) UNIQUE NOT NULL,
+                password VARCHAR(100) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''', commit=True)
+        
+        # Accounts table (Chart of Accounts)
+        execute_query('''
+            CREATE TABLE IF NOT EXISTS accounts (
+                id SERIAL PRIMARY KEY,
+                code VARCHAR(20) UNIQUE NOT NULL,
+                name VARCHAR(100) NOT NULL,
+                type VARCHAR(50) NOT NULL,
+                normal_balance VARCHAR(10) NOT NULL,
+                balance DECIMAL(15,2) DEFAULT 0,
+                user_id INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''', commit=True)
+        
+        # Journals table
+        execute_query('''
+            CREATE TABLE IF NOT EXISTS journals (
+                id SERIAL PRIMARY KEY,
+                entry_no VARCHAR(50) NOT NULL,
+                date DATE NOT NULL,
+                description TEXT,
+                user_id INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(entry_no, user_id)
+            )
+        ''', commit=True)
+        
+        # Journal Details table
+        execute_query('''
+            CREATE TABLE IF NOT EXISTS journal_details (
+                id SERIAL PRIMARY KEY,
+                journal_id INTEGER NOT NULL,
+                account_code VARCHAR(20) NOT NULL,
+                debit DECIMAL(15,2) DEFAULT 0,
+                credit DECIMAL(15,2) DEFAULT 0
+            )
+        ''', commit=True)
+        
+        # Adjustments table
+        execute_query('''
+            CREATE TABLE IF NOT EXISTS adjustments (
+                id SERIAL PRIMARY KEY,
+                date DATE NOT NULL,
+                description TEXT NOT NULL,
+                account_code VARCHAR(20) NOT NULL,
+                debit DECIMAL(15,2) DEFAULT 0,
+                credit DECIMAL(15,2) DEFAULT 0,
+                user_id INTEGER NOT NULL
+            )
+        ''', commit=True)
+        
+        # Inventory table
+        execute_query('''
+            CREATE TABLE IF NOT EXISTS inventory (
+                id SERIAL PRIMARY KEY,
+                code VARCHAR(20) UNIQUE NOT NULL,
+                name VARCHAR(100) NOT NULL,
+                qty INTEGER DEFAULT 0,
+                price DECIMAL(15,2) DEFAULT 0,
+                user_id INTEGER NOT NULL
+            )
+        ''', commit=True)
+        
+        # Cash Payments table
+        execute_query('''
+            CREATE TABLE IF NOT EXISTS cash_payments (
+                id SERIAL PRIMARY KEY,
+                payment_no VARCHAR(50) UNIQUE NOT NULL,
+                date DATE NOT NULL,
+                description TEXT NOT NULL,
+                account_code VARCHAR(20) NOT NULL,
+                amount DECIMAL(15,2) DEFAULT 0,
+                user_id INTEGER NOT NULL
+            )
+        ''', commit=True)
+        
+        # Cash Receipts table
+        execute_query('''
+            CREATE TABLE IF NOT EXISTS cash_receipts (
+                id SERIAL PRIMARY KEY,
+                receipt_no VARCHAR(50) UNIQUE NOT NULL,
+                date DATE NOT NULL,
+                description TEXT NOT NULL,
+                account_code VARCHAR(20) NOT NULL,
+                amount DECIMAL(15,2) DEFAULT 0,
+                user_id INTEGER NOT NULL
+            )
+        ''', commit=True)
+        
+        # Add default accounts if empty
+        accounts_count = execute_query("SELECT COUNT(*) as count FROM accounts", fetch=True)
+        if accounts_count and accounts_count[0]['count'] == 0:
+            default_accounts = [
+                ('1-1000', 'Kas', 'Asset', 'Debit', 0, None),
+                ('1-1100', 'Bank', 'Asset', 'Debit', 0, None),
+                ('1-1200', 'Piutang Usaha', 'Asset', 'Debit', 0, None),
+                ('1-1300', 'Persediaan', 'Asset', 'Debit', 0, None),
+                ('2-2000', 'Hutang Usaha', 'Liability', 'Credit', 0, None),
+                ('2-2100', 'Hutang Bank', 'Liability', 'Credit', 0, None),
+                ('3-3000', 'Modal', 'Equity', 'Credit', 0, None),
+                ('3-3100', 'Laba Ditahan', 'Equity', 'Credit', 0, None),
+                ('3-3200', 'Ikhtisar Laba Rugi', 'Equity', 'Credit', 0, None),
+                ('4-4000', 'Pendapatan Jasa', 'Revenue', 'Credit', 0, None),
+                ('4-4100', 'Pendapatan Lain', 'Revenue', 'Credit', 0, None),
+                ('5-5000', 'Beban Gaji', 'Expense', 'Debit', 0, None),
+                ('5-5100', 'Beban Sewa', 'Expense', 'Debit', 0, None),
+                ('5-5200', 'Beban Listrik', 'Expense', 'Debit', 0, None),
+                ('5-5300', 'Beban Perlengkapan', 'Expense', 'Debit', 0, None),
+            ]
+            
+            for account in default_accounts:
+                execute_query(
+                    "INSERT INTO accounts (code, name, type, normal_balance, balance, user_id) VALUES (?, ?, ?, ?, ?, ?)",
+                    account,
+                    commit=True
+                )
+        
+        print("DEBUG: Database initialized successfully!")
+        
+    except Exception as e:
+        print(f"DEBUG: Error initializing database: {e}")
+        import traceback
+        print(f"DEBUG: Traceback: {traceback.format_exc()}")
     
 # ============ TRIAL BALANCE ============
 @app.route('/trial_balance')
