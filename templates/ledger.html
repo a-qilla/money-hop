@@ -19,9 +19,9 @@
                 <select name="account_code" class="form-control" onchange="this.form.submit()">
                     <option value="">-- Pilih Akun --</option>
                     {% for account in accounts %}
-                    <option value="{{ account[0] }}" 
-                            {% if account[0] == selected_account %}selected{% endif %}>
-                        {{ account[0] }} - {{ account[1] }}
+                    <option value="{{ account['code'] }}" 
+                            {% if account['code'] == selected_account %}selected{% endif %}>
+                        {{ account['code'] }} - {{ account['name'] }}
                     </option>
                     {% endfor %}
                 </select>
@@ -32,8 +32,8 @@
             <div style="margin-top: 1rem; padding: 1rem; background: var(--gray-50); border-radius: 6px;">
                 <h3>Saldo Akun: 
                     {% for account in accounts %}
-                        {% if account[0] == selected_account %}
-                            {{ account[1] }}
+                        {% if account['code'] == selected_account %}
+                            {{ account['name'] }}
                         {% endif %}
                     {% endfor %}
                 </h3>
@@ -67,26 +67,26 @@
                 {% for entry in ledger_data %}
                     {% if selected_account.startswith('1') or selected_account.startswith('5') %}
                         {# Asset & Expense: Debit increase, Credit decrease #}
-                        {% set running_balance = running_balance + entry[3] - entry[4] %}
+                        {% set running_balance = running_balance + entry['debit'] - entry['credit'] %}
                     {% else %}
                         {# Liability, Equity, Revenue: Credit increase, Debit decrease #}
-                        {% set running_balance = running_balance + entry[4] - entry[3] %}
+                        {% set running_balance = running_balance + entry['credit'] - entry['debit'] %}
                     {% endif %}
                     
                     <tr>
-                        <td>{{ entry[0] }}</td>
-                        <td>{{ entry[1] }}</td>
-                        <td>{{ entry[2] }}</td>
+                        <td>{{ entry['date'] }}</td>
+                        <td>{{ entry['entry_no'] }}</td>
+                        <td>{{ entry['description'] }}</td>
                         <td class="text-money">
-                            {% if entry[3] > 0 %}
-                                {{ entry[3] | money_format }}
+                            {% if entry['debit'] > 0 %}
+                                {{ entry['debit'] | money_format }}
                             {% else %}
                                 -
                             {% endif %}
                         </td>
                         <td class="text-money">
-                            {% if entry[4] > 0 %}
-                                {{ entry[4] | money_format }}
+                            {% if entry['credit'] > 0 %}
+                                {{ entry['credit'] | money_format }}
                             {% else %}
                                 -
                             {% endif %}

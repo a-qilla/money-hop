@@ -2074,6 +2074,8 @@ def ledger():
             fetch=True
         )
         
+        print(f"DEBUG: Ledger accounts: {len(accounts) if accounts else 0}")
+        
         ledger_data = []
         if account_code:
             # Get ledger entries for selected account
@@ -2081,9 +2083,11 @@ def ledger():
                 SELECT j.date, j.entry_no, j.description, jd.debit, jd.credit
                 FROM journal_details jd
                 JOIN journals j ON jd.journal_id = j.id
-                WHERE jd.account_code = %s AND j.user_id = %s
+                WHERE jd.account_code = ? AND j.user_id = ?
                 ORDER BY j.date, j.entry_no
             """, (account_code, session['user_id']), fetch=True)
+            
+            print(f"DEBUG: Ledger data for {account_code}: {len(ledger_data) if ledger_data else 0}")
         
         return render_template('ledger.html', 
                              accounts=accounts or [], 
