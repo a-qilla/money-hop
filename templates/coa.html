@@ -8,12 +8,6 @@
     <p>Daftar akun keuangan</p>
 </div>
 
-<!-- Debug info (bisa dihapus setelah fix) -->
-<div class="alert alert-info">
-    <strong>Debug Info:</strong> 
-    Total Akun: {{ accounts|length if accounts else 0 }}
-</div>
-
 <div class="card">
     <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
         <h2>Daftar Akun</h2>
@@ -32,6 +26,7 @@
                     <th>Tipe</th>
                     <th>Normal Balance</th>
                     <th>Saldo</th>
+                    <th>Aksi</th>
                 </tr>
             </thead>
             <tbody>
@@ -53,6 +48,20 @@
                     <td>{{ account['normal_balance'] }}</td>
                     <td class="text-money">
                         {{ money_format(get_account_balance(account['code'])) }}
+                    </td>
+                    <td>
+                        {% if get_account_balance(account['code']) == 0 %}
+                        <form action="{{ url_for('delete_account') }}" method="POST" style="display: inline;">
+                            <input type="hidden" name="account_code" value="{{ account['code'] }}">
+                            <button type="submit" class="btn btn-danger btn-sm">
+                                <i class="fas fa-trash"></i> Hapus
+                            </button>
+                        </form>
+                        {% else %}
+                        <span class="text-muted" style="font-size: 0.8rem;">
+                            Tidak bisa dihapus
+                        </span>
+                        {% endif %}
                     </td>
                 </tr>
                 {% endfor %}

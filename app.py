@@ -863,6 +863,53 @@ def add_account():
     
     return render_template('add_account.html')
 
+@app.route('/delete_account', methods=['POST'])
+def delete_account():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    
+    account_code = request.form.get('account_code')
+    
+    if not account_code:
+        flash('Kode akun tidak valid!', 'error')
+        return redirect(url_for('coa'))
+    
+    try:
+        # Cek apakah akun punya transaksi
+        transactions = execute_query(
+            """SELECT COUNT(*) as count FROM journal_details 
+               WHERE account_code = ?""",
+            (account_code,),
+            fetch=True
+        )
+        
+        if transactions and transactions[0]['count'] > 0:
+            flash('Tidak bisa menghapus akun yang sudah memiliki transaksi!', 'error')
+            return redirect(url_for('coa'))
+        
+        # Cek saldo akun
+        balance = get_account_balance(account_code)
+        if balance != 0:
+            flash('Tidak bisa menghapus akun yang masih memiliki saldo!', 'error')
+            return redirect(url_for('coa'))
+        
+        # Hapus akun
+        success = execute_query(
+            "DELETE FROM accounts WHERE code = ?",
+            (account_code,),
+            commit=True
+        )
+        
+        if success:
+            flash('Akun berhasil dihapus!', 'success')
+        else:
+            flash('Gagal menghapus akun!', 'error')
+            
+    except Exception as e:
+        flash(f'Error: {str(e)}', 'error')
+    
+    return redirect(url_for('coa'))
+
 # ============ ADJUSTING JOURNAL ENTRIES ============
 @app.route('/adjusting_entries', methods=['GET', 'POST'])
 def adjusting_entries():
