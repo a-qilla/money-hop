@@ -572,21 +572,96 @@ def dashboard():
                          expense=money_format(expense),
                          profit=money_format(profit))
 
+@app.route('/debug/db')
+def debug_db():
+    """Debug route untuk cek database connection"""
+    debug_info = {
+        'railway_env': os.environ.get('RAILWAY_ENVIRONMENT'),
+        'db_url_exists': bool(os.environ.get('DATABASE_URL')),
+        'db_url_prefix': os.environ.get('DATABASE_URL', '')[:20] + '...' if os.environ.get('DATABASE_URL') else 'None'
+    }
+    
+    # Test connection
+    try:
+        conn = get_db_connection()
+        if conn:
+            debug_info['connection'] = 'SUCCESS'
+            # Test simple query
+            cursor = conn.cursor()
+            cursor.execute("SELECT 1 as test")
+            result = cursor.fetchone()
+            debug_info['simple_query'] = 'SUCCESS' if result else 'FAILED'
+            conn.close()
+        else:
+            debug_info['connection'] = 'FAILED - No connection'
+    except Exception as e:
+        debug_info['connection'] = f'ERROR: {str(e)}'
+    
+    # Test accounts table query
+    try:
+        result = execute_query("SELECT COUNT(*) as count FROM accounts", fetch=True)
+        if result and len(result) > 0:
+            debug_info['accounts_count'] = result[0]['count']
+        else:
+            debug_info['accounts_count'] = 'No result'
+    except Exception as e:
+        debug_info['accounts_count'] = f'ERROR: {str(e)}'
+    
+    # Test if tables exist
+    try:
+        tables_result = execute_query("""
+            SELECT table_name 
+            FROM information_schema.tables 
+            WHERE table_schema = 'public'
+        """, fetch=True)
+        if tables_result:
+            debug_info['tables'] = [table['table_name'] for table in tables_result]
+        else:
+            debug_info['tables'] = 'No tables found'
+    except Exception as e:
+        debug_info['tables'] = f'ERROR: {str(e)}'
+    
+    return jsonify(debug_info)
+
 @app.route('/coa')
 def coa():
     if 'user_id' not in session:
         return redirect(url_for('login'))
     
-    # Debug: Check accounts count
+    # Debug: Check connection first
+    print(f"DEBUG: Railway Environment: {os.environ.get('RAILWAY_ENVIRONMENT')}")
+    print(f"DEBUG: DATABASE_URL exists: {bool(os.environ.get('DATABASE_URL'))}")
+    
+    # Test connection
+    try:
+        conn = get_db_connection()
+        if conn:
+            print("DEBUG: Database connection SUCCESS")
+            conn.close()
+        else:
+            print("DEBUG: Database connection FAILED")
+    except Exception as e:
+        print(f"DEBUG: Connection error: {e}")
+    
+    # Get accounts count
     count_result = execute_query("SELECT COUNT(*) as count FROM accounts", fetch=True)
     print(f"DEBUG: Total accounts in database: {count_result[0]['count'] if count_result else 0}")
     
+    # Get accounts data
     accounts = execute_query(
         "SELECT code, name, type, normal_balance FROM accounts ORDER BY code", 
         fetch=True
     )
     
-    print(f"DEBUG: Accounts fetched: {accounts}")
+    print(f"DEBUG: Accounts type: {type(accounts)}")
+    print(f"DEBUG: Accounts length: {len(accounts) if accounts else 0}")
+    
+    # Debug first account structure
+    if accounts and len(accounts) > 0:
+        print(f"DEBUG: First account: {dict(accounts[0])}")
+        print(f"DEBUG: First account keys: {list(accounts[0].keys())}")
+    else:
+        print("DEBUG: No accounts found or accounts is empty")
     
     return render_template('coa.html', accounts=accounts)
 

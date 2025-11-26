@@ -8,6 +8,12 @@
     <p>Daftar akun keuangan</p>
 </div>
 
+<!-- Debug info (bisa dihapus setelah fix) -->
+<div class="alert alert-info">
+    <strong>Debug Info:</strong> 
+    Total Akun: {{ accounts|length if accounts else 0 }}
+</div>
+
 <div class="card">
     <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
         <h2>Daftar Akun</h2>
@@ -17,6 +23,7 @@
         </a>
     </div>
     <div class="card-body">
+        {% if accounts and accounts|length > 0 %}
         <table class="table">
             <thead>
                 <tr>
@@ -30,27 +37,34 @@
             <tbody>
                 {% for account in accounts %}
                 <tr>
-                    <td>{{ account[0] }}</td>
-                    <td>{{ account[1] }}</td>
+                    <td>{{ account['code'] }}</td>
+                    <td>{{ account['name'] }}</td>
                     <td>
                         <span class="badge badge-{{ 
-                            'primary' if account[2] == 'Asset' else
-                            'warning' if account[2] == 'Liability' else
-                            'success' if account[2] == 'Equity' else
-                            'info' if account[2] == 'Revenue' else
+                            'primary' if account['type'] == 'Asset' else
+                            'warning' if account['type'] == 'Liability' else
+                            'success' if account['type'] == 'Equity' else
+                            'info' if account['type'] == 'Revenue' else
                             'danger'
                         }}">
-                            {{ account[2] }}
+                            {{ account['type'] }}
                         </span>
                     </td>
-                    <td>{{ account[3] }}</td>
+                    <td>{{ account['normal_balance'] }}</td>
                     <td class="text-money">
-                        {{ money_format(get_account_balance(account[0])) }}
+                        {{ money_format(get_account_balance(account['code'])) }}
                     </td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
+        {% else %}
+        <div class="alert alert-warning">
+            <h4>Tidak ada akun yang ditemukan!</h4>
+            <p>Silakan tambah akun baru atau jalankan database initialization.</p>
+            <a href="{{ url_for('add_account') }}" class="btn btn-primary">Tambah Akun Pertama</a>
+        </div>
+        {% endif %}
     </div>
 </div>
 {% endblock %}
