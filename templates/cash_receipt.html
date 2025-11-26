@@ -39,7 +39,7 @@
                     <select name="account_code" class="form-control" required>
                         <option value="">Pilih Akun</option>
                         {% for account in accounts %}
-                        <option value="{{ account[0] }}">{{ account[0] }} - {{ account[1] }}</option>
+                        <option value="{{ account['code'] }}">{{ account['code'] }} - {{ account['name'] }}</option>
                         {% endfor %}
                     </select>
                 </div>
@@ -78,22 +78,23 @@
                     <th>Deskripsi</th>
                     <th>Akun</th>
                     <th>Jumlah</th>
+                    <th>Aksi</th>
                 </tr>
             </thead>
             <tbody>
                 {% for receipt in receipts %}
                 <tr>
-                    <td>{{ receipt[0] }}</td>
-                    <td>{{ receipt[1] }}</td>
-                    <td>{{ receipt[2] }}</td>
-                    <td>{{ receipt[3] }}</td>
-                    <td class="text-money">{{ receipt[4] | money_format }}</td>
+                    <td>{{ receipt['receipt_no'] }}</td>
+                    <td>{{ receipt['date'] }}</td>
+                    <td>{{ receipt['description'] }}</td>
+                    <td>{{ receipt['account_name'] }}</td>
+                    <td class="text-money">{{ receipt['amount'] | money_format }}</td>
                     <td>
-                        <a href="{{ url_for('delete_cash_receipt', receipt_no=receipt[0]) }}" 
-                        class="btn btn-danger btn-sm" 
-                        onclick="return confirm('Hapus cash receipt {{ receipt[0] }}?')">
-                            <i class="fas fa-trash"></i> Hapus
-                        </a>
+                        <form action="{{ url_for('delete_cash_receipt', receipt_no=receipt['receipt_no']) }}" method="POST" style="display: inline;">
+                            <button type="submit" class="btn btn-danger btn-sm">
+                                <i class="fas fa-trash"></i> Hapus
+                            </button>
+                        </form>
                     </td>
                 </tr>
                 {% endfor %}

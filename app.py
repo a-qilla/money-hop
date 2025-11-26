@@ -572,6 +572,27 @@ def dashboard():
                          expense=money_format(expense),
                          profit=money_format(profit))
 
+@app.route('/debug/accounts')
+def debug_accounts():
+    """Debug route untuk cek accounts"""
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    
+    all_accounts = execute_query("SELECT code, name, type FROM accounts ORDER BY code", fetch=True)
+    cash_payment_accounts = execute_query("SELECT code, name FROM accounts WHERE type IN ('Expense', 'Asset') AND code != '1-1000' ORDER BY code", fetch=True)
+    cash_receipt_accounts = execute_query("SELECT code, name FROM accounts WHERE type IN ('Revenue', 'Liability') ORDER BY code", fetch=True)
+    
+    debug_info = {
+        'total_accounts': len(all_accounts) if all_accounts else 0,
+        'all_accounts': all_accounts,
+        'cash_payment_accounts_count': len(cash_payment_accounts) if cash_payment_accounts else 0,
+        'cash_payment_accounts': cash_payment_accounts,
+        'cash_receipt_accounts_count': len(cash_receipt_accounts) if cash_receipt_accounts else 0,
+        'cash_receipt_accounts': cash_receipt_accounts
+    }
+    
+    return jsonify(debug_info)
+
 @app.route('/debug/db')
 def debug_db():
     """Debug route untuk cek database connection"""
@@ -671,11 +692,16 @@ def journal():
         if 'user_id' not in session:
             return redirect(url_for('login'))
         
-        # Get accounts for dropdown
+        # Get accounts for dropdown - FIXED QUERY
         accounts = execute_query(
             "SELECT code, name FROM accounts ORDER BY code", 
             fetch=True
         )
+        
+        # Debug accounts
+        print(f"DEBUG: Accounts fetched: {len(accounts) if accounts else 0}")
+        if accounts and len(accounts) > 0:
+            print(f"DEBUG: First account: {dict(accounts[0])}")
         
         if request.method == 'POST':
             entry_no = request.form['entry_no']
@@ -1594,6 +1620,14 @@ def cash_payment():
     if 'user_id' not in session:
         return redirect(url_for('login'))
     
+    # FIXED: Get accounts for dropdown
+    accounts = execute_query(
+        "SELECT code, name FROM accounts WHERE type IN ('Expense', 'Asset') AND code != '1-1000' ORDER BY code",
+        fetch=True
+    )
+    
+    print(f"DEBUG: Cash Payment Accounts: {len(accounts) if accounts else 0}")
+    
     if request.method == 'POST':
         payment_no = request.form['payment_no']
         date = request.form['date']
@@ -1609,7 +1643,7 @@ def cash_payment():
             # Insert cash payment
             success = execute_query("""
                 INSERT INTO cash_payments (payment_no, date, description, account_code, amount, user_id)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                VALUES (?, ?, ?, ?, ?, ?)
             """, (payment_no, date, description, account_code, amount, session['user_id']), commit=True)
             
             if not success:
@@ -1621,7 +1655,7 @@ def cash_payment():
             # Insert journal entry
             journal_success = execute_query("""
                 INSERT INTO journals (entry_no, date, description, user_id)
-                VALUES (%s, %s, %s, %s)
+                VALUES (?, ?, ?, ?)
             """, (journal_entry_no, date, f"Cash Payment: {description}", session['user_id']), commit=True)
             
             if not journal_success:
@@ -1630,7 +1664,7 @@ def cash_payment():
             
             # Get the last inserted journal ID
             journal_result = execute_query(
-                "SELECT id FROM journals WHERE entry_no = %s AND user_id = %s ORDER BY id DESC LIMIT 1",
+                "SELECT id FROM journals WHERE entry_no = ? AND user_id = ? ORDER BY id DESC LIMIT 1",
                 (journal_entry_no, session['user_id']), 
                 fetch=True
             )
@@ -1644,13 +1678,13 @@ def cash_payment():
             # Insert journal details (Kas credit)
             execute_query("""
                 INSERT INTO journal_details (journal_id, account_code, debit, credit)
-                VALUES (%s, %s, %s, %s)
+                VALUES (?, ?, ?, ?)
             """, (journal_id, '1-1000', 0, amount), commit=True)
             
             # Insert journal details (Account debit)
             execute_query("""
                 INSERT INTO journal_details (journal_id, account_code, debit, credit)
-                VALUES (%s, %s, %s, %s)
+                VALUES (?, ?, ?, ?)
             """, (journal_id, account_code, amount, 0), commit=True)
             
             flash('Cash Payment berhasil dicatat!', 'success')
@@ -1659,15 +1693,9 @@ def cash_payment():
             print(f"Cash payment error: {e}")
             flash(f'Error: {str(e)}', 'error')
     
-    # Get accounts for dropdown
-    accounts = execute_query(
-        "SELECT code, name FROM accounts WHERE type IN ('Expense', 'Asset') AND code != '1-1000' ORDER BY code",
-        fetch=True
-    )
-    
     # Get payment count
     payment_count_result = execute_query(
-        "SELECT COUNT(*) as count FROM cash_payments WHERE user_id = %s",
+        "SELECT COUNT(*) as count FROM cash_payments WHERE user_id = ?",
         (session['user_id'],),
         fetch=True
     )
@@ -1678,7 +1706,7 @@ def cash_payment():
         SELECT cp.payment_no, cp.date, cp.description, a.name as account_name, cp.amount
         FROM cash_payments cp
         JOIN accounts a ON cp.account_code = a.code
-        WHERE cp.user_id = %s
+        WHERE cp.user_id = ?
         ORDER BY cp.date DESC, cp.payment_no DESC
         LIMIT 50
     """, (session['user_id'],), fetch=True)
@@ -1693,6 +1721,14 @@ def cash_payment():
 def cash_receipt():
     if 'user_id' not in session:
         return redirect(url_for('login'))
+    
+    # FIXED: Get accounts for dropdown
+    accounts = execute_query(
+        "SELECT code, name FROM accounts WHERE type IN ('Revenue', 'Liability') ORDER BY code",
+        fetch=True
+    )
+    
+    print(f"DEBUG: Cash Receipt Accounts: {len(accounts) if accounts else 0}")
     
     if request.method == 'POST':
         receipt_no = request.form['receipt_no']
@@ -1709,7 +1745,7 @@ def cash_receipt():
             # Insert cash receipt
             success = execute_query("""
                 INSERT INTO cash_receipts (receipt_no, date, description, account_code, amount, user_id)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                VALUES (?, ?, ?, ?, ?, ?)
             """, (receipt_no, date, description, account_code, amount, session['user_id']), commit=True)
             
             if not success:
@@ -1721,7 +1757,7 @@ def cash_receipt():
             # Insert journal entry
             journal_success = execute_query("""
                 INSERT INTO journals (entry_no, date, description, user_id)
-                VALUES (%s, %s, %s, %s)
+                VALUES (?, ?, ?, ?)
             """, (journal_entry_no, date, f"Cash Receipt: {description}", session['user_id']), commit=True)
             
             if not journal_success:
@@ -1730,7 +1766,7 @@ def cash_receipt():
             
             # Get the last inserted journal ID
             journal_result = execute_query(
-                "SELECT id FROM journals WHERE entry_no = %s AND user_id = %s ORDER BY id DESC LIMIT 1",
+                "SELECT id FROM journals WHERE entry_no = ? AND user_id = ? ORDER BY id DESC LIMIT 1",
                 (journal_entry_no, session['user_id']), 
                 fetch=True
             )
@@ -1744,13 +1780,13 @@ def cash_receipt():
             # Insert journal details (Kas debit)
             execute_query("""
                 INSERT INTO journal_details (journal_id, account_code, debit, credit)
-                VALUES (%s, %s, %s, %s)
+                VALUES (?, ?, ?, ?)
             """, (journal_id, '1-1000', amount, 0), commit=True)
             
             # Insert journal details (Account credit)
             execute_query("""
                 INSERT INTO journal_details (journal_id, account_code, debit, credit)
-                VALUES (%s, %s, %s, %s)
+                VALUES (?, ?, ?, ?)
             """, (journal_id, account_code, 0, amount), commit=True)
             
             flash('Cash Receipt berhasil dicatat!', 'success')
@@ -1759,15 +1795,9 @@ def cash_receipt():
             print(f"Cash receipt error: {e}")
             flash(f'Error: {str(e)}', 'error')
     
-    # Get accounts for dropdown
-    accounts = execute_query(
-        "SELECT code, name FROM accounts WHERE type IN ('Revenue', 'Liability') ORDER BY code",
-        fetch=True
-    )
-    
     # Get receipt count
     receipt_count_result = execute_query(
-        "SELECT COUNT(*) as count FROM cash_receipts WHERE user_id = %s",
+        "SELECT COUNT(*) as count FROM cash_receipts WHERE user_id = ?",
         (session['user_id'],),
         fetch=True
     )
@@ -1778,7 +1808,7 @@ def cash_receipt():
         SELECT cr.receipt_no, cr.date, cr.description, a.name as account_name, cr.amount
         FROM cash_receipts cr
         JOIN accounts a ON cr.account_code = a.code
-        WHERE cr.user_id = %s
+        WHERE cr.user_id = ?
         ORDER BY cr.date DESC, cr.receipt_no DESC
         LIMIT 50
     """, (session['user_id'],), fetch=True)
