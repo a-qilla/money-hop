@@ -1,0 +1,341 @@
+[1mdiff --git a/app.py b/app.py[m
+[1mindex b54f9d9..19a4593 100644[m
+[1m--- a/app.py[m
+[1m+++ b/app.py[m
+[36m@@ -938,166 +938,167 @@[m [mdef delete_account():[m
+ [m
+ # ============ ADJUSTING JOURNAL ENTRIES ============[m
+ @app.route('/adjusting_entries', methods=['GET', 'POST'])[m
+[31m-def adjusting_entries():[m
+[32m+[m[32mdef adjusting():[m
+[32m+[m[32m    if 'user_id' not in session:[m
+[32m+[m[32m        return redirect(url_for('login'))[m
+[32m+[m[41m    [m
+     try:[m
+[31m-        if 'user_id' not in session:[m
+[31m-            return redirect(url_for('login'))[m
+[31m-        [m
+[31m-        # GET accounts untuk dropdown[m
+[31m-        accounts = execute_query([m
+[31m-            "SELECT code, name FROM accounts ORDER BY code", [m
+[31m-            fetch=True[m
+[31m-        )[m
+[31m-        [m
+         if request.method == 'POST':[m
+[32m+[m[32m            # Ambil data dari form[m
+             entry_no = request.form['entry_no'][m
+             date = request.form['date'][m
+             description = request.form['description'][m
+[31m-            accounts_form = request.form.getlist('account_code[]')[m
+[32m+[m[41m            [m
+[32m+[m[32m            # Ambil array data[m
+[32m+[m[32m            account_codes = request.form.getlist('account_code[]')[m
+             debits = request.form.getlist('debit[]')[m
+             credits = request.form.getlist('credit[]')[m
+[31m-            adjustment_type = request.form.get('adjustment_type', '')[m
+             [m
+[31m-            # Validasi required fields[m
+[31m-            if not entry_no or not date or not description:[m
+[31m-                flash('Mohon isi semua field yang required!', 'error')[m
+[31m-                return render_template('adjusting_entries.html', [m
+[31m-                                     accounts=accounts,[m
+[31m-                                     adjusting_count=0,[m
+[31m-                                     today=datetime.now().strftime('%Y-%m-%d'),[m
+[31m-                                     adjusting_entries=[])[m
+[32m+[m[32m            # Validasi minimal 2 akun[m
+[32m+[m[32m            if len(account_codes) < 2:[m
+[32m+[m[32m                flash('Minimal harus ada 2 akun', 'error')[m
+[32m+[m[32m                return redirect(url_for('adjusting'))[m
+             [m
+[31m-            # Validasi debit = kredit[m
+[31m-            total_debit = sum(safe_float(debit) for debit in debits)[m
+[31m-            total_credit = sum(safe_float(credit) for credit in credits)[m
+[32m+[m[32m            # Validasi akun tidak boleh kosong[m
+[32m+[m[32m            valid_entries = [][m
+[32m+[m[32m            total_debit = 0[m
+[32m+[m[32m            total_credit = 0[m
+             [m
+[32m+[m[32m            for i in range(len(account_codes)):[m
+[32m+[m[32m                account_code = account_codes[i][m
+[32m+[m[32m                debit = safe_float(debits[i])[m
+[32m+[m[32m                credit = safe_float(credits[i])[m
+[32m+[m[41m                [m
+[32m+[m[32m                if account_code and (debit > 0 or credit > 0):[m
+[32m+[m[32m                    valid_entries.append({[m
+[32m+[m[32m                        'account_code': account_code,[m
+[32m+[m[32m                        'debit': debit,[m
+[32m+[m[32m                        'credit': credit[m
+[32m+[m[32m                    })[m
+[32m+[m[32m                    total_debit += debit[m
+[32m+[m[32m                    total_credit += credit[m
+[32m+[m[41m            [m
+[32m+[m[32m            if len(valid_entries) < 2:[m
+[32m+[m[32m                flash('Minimal harus ada 2 akun dengan nilai debit/kredit', 'error')[m
+[32m+[m[32m                return redirect(url_for('adjusting'))[m
+[32m+[m[41m            [m
+[32m+[m[32m            # Validasi balance[m
+             if abs(total_debit - total_credit) > 0.01:[m
+[31m-                flash('Total debit dan kredit harus seimbang!', 'error')[m
+[31m-                return render_template('adjusting_entries.html', [m
+[31m-                                     accounts=accounts,[m
+[31m-                                     adjusting_count=0,[m
+[31m-                                     today=datetime.now().strftime('%Y-%m-%d'),[m
+[31m-                                     adjusting_entries=[])[m
+[32m+[m[32m                flash(f'Total debit ({total_debit:,.2f}) dan kredit ({total_credit:,.2f}) harus sama!', 'error')[m
+[32m+[m[32m                return redirect(url_for('adjusting'))[m
+             [m
+             try:[m
+                 # Start transaction[m
+                 execute_query("BEGIN", commit=True)[m
+                 [m
+[31m-                # Insert adjusting journal header[m
+[32m+[m[32m                # 1. Insert adjusting journal header[m
+                 journal_success = execute_query([m
+[31m-                    "INSERT INTO journals (entry_no, date, description, user_id) VALUES (?, ?, ?, ?)",[m
+[31m-                    (entry_no, date, f"[PENYESUAIAN] {description}", session['user_id']),[m
+[32m+[m[32m                    """INSERT INTO adjusting_journals[m[41m [m
+[32m+[m[32m                       (entry_no, date, description, total_debit, total_credit, user_id)[m[41m [m
+[32m+[m[32m                       VALUES (?, ?, ?, ?, ?, ?)""",[m
+[32m+[m[32m                    (entry_no, date, description, total_debit, total_credit, session['user_id']),[m
+                     commit=False[m
+                 )[m
+                 [m
+                 if not journal_success:[m
+                     execute_query("ROLLBACK", commit=True)[m
+[31m-                    flash('Error menyimpan jurnal penyesuaian!', 'error')[m
+[31m-                    return render_template('adjusting_entries.html', [m
+[31m-                                         accounts=accounts,[m
+[31m-                                         adjusting_count=0,[m
+[31m-                                         today=datetime.now().strftime('%Y-%m-%d'),[m
+[31m-                                         adjusting_entries=[])[m
+[31m-                [m
+[31m-                # Get the last inserted journal ID[m
+[31m-                journal_results = execute_query([m
+[31m-                    "SELECT id FROM journals WHERE entry_no = ? AND user_id = ? ORDER BY id DESC LIMIT 1",[m
+[31m-                    (entry_no, session['user_id']),[m
+[31m-                    fetch=True[m
+[31m-                )[m
+[31m-                [m
+[31m-                if not journal_results or len(journal_results) == 0:[m
+[31m-                    execute_query("ROLLBACK", commit=True)[m
+[31m-                    flash('Error mendapatkan ID jurnal!', 'error')[m
+[31m-                    return render_template('adjusting_entries.html', [m
+[31m-                                         accounts=accounts,[m
+[31m-                                         adjusting_count=0,[m
+[31m-                                         today=datetime.now().strftime('%Y-%m-%d'),[m
+[31m-                                         adjusting_entries=[])[m
+[31m-                [m
+[31m-                journal_id = journal_results[0]['id'][m
+[32m+[m[32m                    flash('Error menyimpan header jurnal penyesuaian!', 'error')[m
+[32m+[m[32m                    return redirect(url_for('adjusting'))[m
+                 [m
+[31m-                # Insert journal details untuk semua accounts[m
+[31m-                for i, account_code in enumerate(accounts_form):[m
+[31m-                    if account_code and (safe_float(debits[i]) > 0 or safe_float(credits[i]) > 0):[m
+[31m-                        detail_success = execute_query([m
+[31m-                            "INSERT INTO journal_details (journal_id, account_code, debit, credit) VALUES (?, ?, ?, ?)",[m
+[31m-                            (journal_id, account_code, safe_float(debits[i]), safe_float(credits[i])),[m
+[31m-                            commit=False[m
+[31m-                        )[m
+[31m-                        if not detail_success:[m
+[31m-                            execute_query("ROLLBACK", commit=True)[m
+[31m-                            flash('Error menyimpan detail jurnal!', 'error')[m
+[31m-                            return render_template('adjusting_entries.html', [m
+[31m-                                                 accounts=accounts,[m
+[31m-                                                 adjusting_count=0,[m
+[31m-                                                 today=datetime.now().strftime('%Y-%m-%d'),[m
+[31m-                                                 adjusting_entries=[])[m
+[31m-                [m
+[31m-                # Insert adjustment record (opsional, untuk tracking)[m
+[31m-                if accounts_form and len(accounts_form) > 0:[m
+[31m-                    adjustment_success = execute_query([m
+[31m-                        "INSERT INTO adjustments (date, description, account_code, debit, credit, user_id) VALUES (?, ?, ?, ?, ?, ?)",[m
+[31m-                        (date, description, accounts_form[0], safe_float(debits[0]), safe_float(credits[0]), session['user_id']),[m
+[32m+[m[32m                # 2. Insert adjusting entries[m
+[32m+[m[32m                for entry in valid_entries:[m
+[32m+[m[32m                    detail_success = execute_query([m
+[32m+[m[32m                        """INSERT INTO adjusting_entries[m[41m [m
+[32m+[m[32m                           (entry_no, account_code, debit, credit, user_id)[m[41m [m
+[32m+[m[32m                           VALUES (?, ?, ?, ?, ?)""",[m
+[32m+[m[32m                        (entry_no, entry['account_code'], entry['debit'], entry['credit'], session['user_id']),[m
+[32m+[m[32m                        commit=False[m
+[32m+[m[32m                    )[m
+[32m+[m[41m                    [m
+[32m+[m[32m                    if not detail_success:[m
+[32m+[m[32m                        execute_query("ROLLBACK", commit=True)[m
+[32m+[m[32m                        flash('Error menyimpan detail penyesuaian!', 'error')[m
+[32m+[m[32m                        return redirect(url_for('adjusting'))[m
+[32m+[m[41m                    [m
+[32m+[m[32m                    # 3. Update account balance[m
+[32m+[m[32m                    update_success = execute_query([m
+[32m+[m[32m                        """UPDATE accounts[m[41m [m
+[32m+[m[32m                           SET balance = balance + ? - ?[m
+[32m+[m[32m                           WHERE code = ? AND user_id = ?""",[m
+[32m+[m[32m                        (entry['debit'], entry['credit'], entry['account_code'], session['user_id']),[m
+                         commit=False[m
+                     )[m
+                     [m
+[31m-                    if not adjustment_success:[m
+[31m-                        print("DEBUG: Adjustment record insert failed, but continuing...")[m
+[31m-                        # Continue even if adjustment record fails[m
+[32m+[m[32m                    if not update_success:[m
+[32m+[m[32m                        execute_query("ROLLBACK", commit=True)[m
+[32m+[m[32m                        flash(f'Error update saldo akun {entry["account_code"]}!', 'error')[m
+[32m+[m[32m                        return redirect(url_for('adjusting'))[m
+                 [m
+[31m-                # Commit all transactions[m
+[32m+[m[32m                # 4. Commit transaction[m
+                 commit_success = execute_query("COMMIT", commit=True)[m
+                 if commit_success:[m
+[31m-                    flash('Jurnal Penyesuaian berhasil disimpan!', 'success')[m
+[32m+[m[32m                    flash('Jurnal penyesuaian berhasil disimpan!', 'success')[m
+                 else:[m
+                     flash('Error commit transaksi!', 'error')[m
+                     [m
+             except Exception as e:[m
+                 # Rollback on error[m
+                 execute_query("ROLLBACK", commit=True)[m
+[31m-                print(f"Adjusting entries save error: {e}")[m
+[32m+[m[32m                print(f"Adjusting journal save error: {e}")[m
+                 if 'UNIQUE' in str(e) or 'unique' in str(e).lower():[m
+                     flash('Nomor entri sudah ada!', 'error')[m
+                 else:[m
+                     flash(f'Error menyimpan jurnal penyesuaian: {str(e)}', 'error')[m
+         [m
+[31m-        # Get adjusting entries count for auto-numbering[m
+[31m-        adjusting_count_results = execute_query([m
+[31m-            "SELECT COUNT(*) as count FROM journals WHERE user_id = ? AND description LIKE '[PENYESUAIAN]%'", [m
+[32m+[m[32m        # GET REQUEST - Tampilkan form dan history[m
+[32m+[m[41m        [m
+[32m+[m[32m        # Ambil data akun untuk dropdown[m
+[32m+[m[32m        accounts = execute_query([m
+[32m+[m[32m            "SELECT code, name FROM accounts WHERE user_id = ? ORDER BY code",[m[41m [m
+             (session['user_id'],), [m
+             fetch=True[m
+         )[m
+[31m-        adjusting_count = adjusting_count_results[0]['count'] if adjusting_count_results and len(adjusting_count_results) > 0 else 0[m
+[31m-[m
+[31m-        # Get adjusting entries history[m
+[31m-        adjusting_entries = execute_query("""[m
+[31m-            SELECT j.entry_no, j.date, j.description, [m
+[31m-                   STRING_AGG(a.name || ' (D: ' || jd.debit || ', C: ' || jd.credit || ')', ', ') as details[m
+[31m-            FROM journals j[m
+[31m-            LEFT JOIN journal_details jd ON j.id = jd.journal_id[m
+[31m-            LEFT JOIN accounts a ON jd.account_code = a.code[m
+[31m-            WHERE j.user_id = ? AND j.description LIKE '[PENYESUAIAN]%'[m
+[31m-            GROUP BY j.id, j.entry_no, j.date, j.description[m
+[31m-            ORDER BY j.date DESC, j.entry_no DESC[m
+[32m+[m[41m        [m
+[32m+[m[32m        # Hitung jumlah jurnal untuk nomor entri berikutnya[m
+[32m+[m[32m        count_result = execute_query([m
+[32m+[m[32m            "SELECT COUNT(*) as count FROM adjusting_journals WHERE user_id = ?",[m[41m [m
+[32m+[m[32m            (session['user_id'],),[m[41m [m
+[32m+[m[32m            fetch=True[m
+[32m+[m[32m        )[m
+[32m+[m[32m        journal_count = count_result[0]['count'] if count_result else 0[m
+[32m+[m[41m        [m
+[32m+[m[32m        # Ambil riwayat jurnal penyesuaian[m
+[32m+[m[32m        adjustings = execute_query("""[m
+[32m+[m[32m            SELECT aj.entry_no, aj.date, aj.description,[m[41m [m
+[32m+[m[32m                   aj.total_debit, aj.total_credit,[m
+[32m+[m[32m                   GROUP_CONCAT([m
+[32m+[m[32m                       a.name || ' (D: ' || ae.debit || ', C: ' || ae.credit || ')',[m[41m [m
+[32m+[m[32m                       ', '[m
+[32m+[m[32m                   ) as account_details[m
+[32m+[m[32m            FROM adjusting_journals aj[m
+[32m+[m[32m            LEFT JOIN adjusting_entries ae ON aj.entry_no = ae.entry_no[m
+[32m+[m[32m            LEFT JOIN accounts a ON ae.account_code = a.code[m
+[32m+[m[32m            WHERE aj.user_id = ?[m
+[32m+[m[32m            GROUP BY aj.entry_no, aj.date, aj.description, aj.total_debit, aj.total_credit[m
+[32m+[m[32m            ORDER BY aj.date DESC, aj.entry_no DESC[m
+             LIMIT 50[m
+         """, (session['user_id'],), fetch=True)[m
+         [m
+[31m-        return render_template('adjusting_entries.html', [m
+[31m-                             accounts=accounts,[m
+[31m-                             adjusting_count=adjusting_count,[m
+[31m-                             today=datetime.now().strftime('%Y-%m-%d'),[m
+[31m-                             adjusting_entries=adjusting_entries or [])[m
+[32m+[m[32m        return render_template('adjusting.html',[m
+[32m+[m[32m                             accounts=accounts or [],[m
+[32m+[m[32m                             journal_count=journal_count,[m
+[32m+[m[32m                             adjustings=adjustings or [],[m
+[32m+[m[32m                             today=datetime.now().strftime('%Y-%m-%d'))[m
+                              [m
+     except Exception as e:[m
+[31m-        print(f"Adjusting entries route error: {e}")[m
+[31m-        flash('Error loading adjusting entries page', 'error')[m
+[31m-        return render_template('adjusting_entries.html', [m
+[32m+[m[32m        print(f"Adjusting route error: {e}")[m
+[32m+[m[32m        flash('Error loading adjusting journal page', 'error')[m
+[32m+[m[32m        return render_template('adjusting.html',[m
+                              accounts=[],[m
+[31m-                             adjusting_count=0,[m
+[31m-                             today=datetime.now().strftime('%Y-%m-%d'),[m
+[31m-                             adjusting_entries=[])[m
+[31m-[m
+[32m+[m[32m                             journal_count=0,[m
+[32m+[m[32m                             adjustings=[],[m
+[32m+[m[32m                             today=datetime.now().strftime('%Y-%m-%d'))[m
+[32m+[m[41m    [m
+ # ============ CLOSING JOURNAL ENTRIES ============[m
+ @app.route('/closing_entries', methods=['GET', 'POST'])[m
+ def closing_entries():[m
+[36m@@ -2243,45 +2244,104 @@[m [mdef delete_adjusting_entry(entry_no):[m
+         return redirect(url_for('login'))[m
+     [m
+     try:[m
+[31m-        # Get journal ID first[m
+[31m-        journal_result = execute_query([m
+[31m-            "SELECT id FROM journals WHERE entry_no = %s AND user_id = %s",[m
+[32m+[m[32m        # Start transaction[m
+[32m+[m[32m        execute_query("BEGIN", commit=True)[m
+[32m+[m[41m        [m
+[32m+[m[32m        # 1. Ambil data entries sebelum dihapus untuk reverse saldo[m
+[32m+[m[32m        entries = execute_query([m
+[32m+[m[32m            "SELECT account_code, debit, credit FROM adjusting_entries WHERE entry_no = ? AND user_id = ?",[m
+             (entry_no, session['user_id']),[m
+             fetch=True[m
+         )[m
+         [m
+[31m-        if journal_result and len(journal_result) > 0:[m
+[31m-            journal_id = journal_result[0]['id'][m
+[31m-            [m
+[31m-            # Delete journal details first[m
+[31m-            success_details = execute_query([m
+[31m-                "DELETE FROM journal_details WHERE journal_id = %s",[m
+[31m-                (journal_id,),[m
+[31m-                commit=True[m
+[31m-            )[m
+[31m-            [m
+[31m-            if success_details:[m
+[31m-                # Delete journal[m
+[31m-                success_journal = execute_query([m
+[31m-                    "DELETE FROM journals WHERE id = %s",[m
+[31m-                    (journal_id,),[m
+[31m-                    commit=True[m
+[32m+[m[32m        if entries:[m
+[32m+[m[32m            # 2. Reverse saldo akun[m
+[32m+[m[32m            for entry in entries:[m
+[32m+[m[32m                reverse_success = execute_query([m
+[32m+[m[32m                    """UPDATE accounts[m[41m [m
+[32m+[m[32m                       SET balance = balance - ? + ?[m
+[32m+[m[32m                       WHERE code = ? AND user_id = ?""",[m
+[32m+[m[32m                    (entry['debit'], entry['credit'], entry['account_code'], session['user_id']),[m
+[32m+[m[32m                    commit=False[m
+                 )[m
+                 [m
+[31m-                if success_journal:[m
+[31m-                    flash('Jurnal penyesuaian berhasil dihapus!', 'success')[m
+[31m-                else:[m
+[31m-                    flash('Gagal menghapus jurnal penyesuaian!', 'error')[m
+[31m-            else:[m
+[31m-                flash('Gagal menghapus detail jurnal penyesuaian!', 'error')[m
+[32m+[m[32m                if not reverse_success:[m
+[32m+[m[32m                    execute_query("ROLLBACK", commit=True)[m
+[32m+[m[32m                    flash(f'Error reverse saldo akun {entry["account_code"]}!', 'error')[m
+[32m+[m[32m                    return redirect(url_for('adjusting'))[m
+[32m+[m[41m        [m
+[32m+[m[32m        # 3. Hapus entries[m
+[32m+[m[32m        delete_entries_success = execute_query([m
+[32m+[m

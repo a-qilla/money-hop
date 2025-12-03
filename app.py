@@ -938,166 +938,167 @@ def delete_account():
 
 # ============ ADJUSTING JOURNAL ENTRIES ============
 @app.route('/adjusting_entries', methods=['GET', 'POST'])
-def adjusting_entries():
+def adjusting():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    
     try:
-        if 'user_id' not in session:
-            return redirect(url_for('login'))
-        
-        # GET accounts untuk dropdown
-        accounts = execute_query(
-            "SELECT code, name FROM accounts ORDER BY code", 
-            fetch=True
-        )
-        
         if request.method == 'POST':
+            # Ambil data dari form
             entry_no = request.form['entry_no']
             date = request.form['date']
             description = request.form['description']
-            accounts_form = request.form.getlist('account_code[]')
+            
+            # Ambil array data
+            account_codes = request.form.getlist('account_code[]')
             debits = request.form.getlist('debit[]')
             credits = request.form.getlist('credit[]')
-            adjustment_type = request.form.get('adjustment_type', '')
             
-            # Validasi required fields
-            if not entry_no or not date or not description:
-                flash('Mohon isi semua field yang required!', 'error')
-                return render_template('adjusting_entries.html', 
-                                     accounts=accounts,
-                                     adjusting_count=0,
-                                     today=datetime.now().strftime('%Y-%m-%d'),
-                                     adjusting_entries=[])
+            # Validasi minimal 2 akun
+            if len(account_codes) < 2:
+                flash('Minimal harus ada 2 akun', 'error')
+                return redirect(url_for('adjusting'))
             
-            # Validasi debit = kredit
-            total_debit = sum(safe_float(debit) for debit in debits)
-            total_credit = sum(safe_float(credit) for credit in credits)
+            # Validasi akun tidak boleh kosong
+            valid_entries = []
+            total_debit = 0
+            total_credit = 0
             
+            for i in range(len(account_codes)):
+                account_code = account_codes[i]
+                debit = safe_float(debits[i])
+                credit = safe_float(credits[i])
+                
+                if account_code and (debit > 0 or credit > 0):
+                    valid_entries.append({
+                        'account_code': account_code,
+                        'debit': debit,
+                        'credit': credit
+                    })
+                    total_debit += debit
+                    total_credit += credit
+            
+            if len(valid_entries) < 2:
+                flash('Minimal harus ada 2 akun dengan nilai debit/kredit', 'error')
+                return redirect(url_for('adjusting'))
+            
+            # Validasi balance
             if abs(total_debit - total_credit) > 0.01:
-                flash('Total debit dan kredit harus seimbang!', 'error')
-                return render_template('adjusting_entries.html', 
-                                     accounts=accounts,
-                                     adjusting_count=0,
-                                     today=datetime.now().strftime('%Y-%m-%d'),
-                                     adjusting_entries=[])
+                flash(f'Total debit ({total_debit:,.2f}) dan kredit ({total_credit:,.2f}) harus sama!', 'error')
+                return redirect(url_for('adjusting'))
             
             try:
                 # Start transaction
                 execute_query("BEGIN", commit=True)
                 
-                # Insert adjusting journal header
+                # 1. Insert adjusting journal header
                 journal_success = execute_query(
-                    "INSERT INTO journals (entry_no, date, description, user_id) VALUES (?, ?, ?, ?)",
-                    (entry_no, date, f"[PENYESUAIAN] {description}", session['user_id']),
+                    """INSERT INTO adjusting_journals 
+                       (entry_no, date, description, total_debit, total_credit, user_id) 
+                       VALUES (?, ?, ?, ?, ?, ?)""",
+                    (entry_no, date, description, total_debit, total_credit, session['user_id']),
                     commit=False
                 )
                 
                 if not journal_success:
                     execute_query("ROLLBACK", commit=True)
-                    flash('Error menyimpan jurnal penyesuaian!', 'error')
-                    return render_template('adjusting_entries.html', 
-                                         accounts=accounts,
-                                         adjusting_count=0,
-                                         today=datetime.now().strftime('%Y-%m-%d'),
-                                         adjusting_entries=[])
+                    flash('Error menyimpan header jurnal penyesuaian!', 'error')
+                    return redirect(url_for('adjusting'))
                 
-                # Get the last inserted journal ID
-                journal_results = execute_query(
-                    "SELECT id FROM journals WHERE entry_no = ? AND user_id = ? ORDER BY id DESC LIMIT 1",
-                    (entry_no, session['user_id']),
-                    fetch=True
-                )
-                
-                if not journal_results or len(journal_results) == 0:
-                    execute_query("ROLLBACK", commit=True)
-                    flash('Error mendapatkan ID jurnal!', 'error')
-                    return render_template('adjusting_entries.html', 
-                                         accounts=accounts,
-                                         adjusting_count=0,
-                                         today=datetime.now().strftime('%Y-%m-%d'),
-                                         adjusting_entries=[])
-                
-                journal_id = journal_results[0]['id']
-                
-                # Insert journal details untuk semua accounts
-                for i, account_code in enumerate(accounts_form):
-                    if account_code and (safe_float(debits[i]) > 0 or safe_float(credits[i]) > 0):
-                        detail_success = execute_query(
-                            "INSERT INTO journal_details (journal_id, account_code, debit, credit) VALUES (?, ?, ?, ?)",
-                            (journal_id, account_code, safe_float(debits[i]), safe_float(credits[i])),
-                            commit=False
-                        )
-                        if not detail_success:
-                            execute_query("ROLLBACK", commit=True)
-                            flash('Error menyimpan detail jurnal!', 'error')
-                            return render_template('adjusting_entries.html', 
-                                                 accounts=accounts,
-                                                 adjusting_count=0,
-                                                 today=datetime.now().strftime('%Y-%m-%d'),
-                                                 adjusting_entries=[])
-                
-                # Insert adjustment record (opsional, untuk tracking)
-                if accounts_form and len(accounts_form) > 0:
-                    adjustment_success = execute_query(
-                        "INSERT INTO adjustments (date, description, account_code, debit, credit, user_id) VALUES (?, ?, ?, ?, ?, ?)",
-                        (date, description, accounts_form[0], safe_float(debits[0]), safe_float(credits[0]), session['user_id']),
+                # 2. Insert adjusting entries
+                for entry in valid_entries:
+                    detail_success = execute_query(
+                        """INSERT INTO adjusting_entries 
+                           (entry_no, account_code, debit, credit, user_id) 
+                           VALUES (?, ?, ?, ?, ?)""",
+                        (entry_no, entry['account_code'], entry['debit'], entry['credit'], session['user_id']),
                         commit=False
                     )
                     
-                    if not adjustment_success:
-                        print("DEBUG: Adjustment record insert failed, but continuing...")
-                        # Continue even if adjustment record fails
+                    if not detail_success:
+                        execute_query("ROLLBACK", commit=True)
+                        flash('Error menyimpan detail penyesuaian!', 'error')
+                        return redirect(url_for('adjusting'))
+                    
+                    # 3. Update account balance
+                    update_success = execute_query(
+                        """UPDATE accounts 
+                           SET balance = balance + ? - ?
+                           WHERE code = ? AND user_id = ?""",
+                        (entry['debit'], entry['credit'], entry['account_code'], session['user_id']),
+                        commit=False
+                    )
+                    
+                    if not update_success:
+                        execute_query("ROLLBACK", commit=True)
+                        flash(f'Error update saldo akun {entry["account_code"]}!', 'error')
+                        return redirect(url_for('adjusting'))
                 
-                # Commit all transactions
+                # 4. Commit transaction
                 commit_success = execute_query("COMMIT", commit=True)
                 if commit_success:
-                    flash('Jurnal Penyesuaian berhasil disimpan!', 'success')
+                    flash('Jurnal penyesuaian berhasil disimpan!', 'success')
                 else:
                     flash('Error commit transaksi!', 'error')
                     
             except Exception as e:
                 # Rollback on error
                 execute_query("ROLLBACK", commit=True)
-                print(f"Adjusting entries save error: {e}")
+                print(f"Adjusting journal save error: {e}")
                 if 'UNIQUE' in str(e) or 'unique' in str(e).lower():
                     flash('Nomor entri sudah ada!', 'error')
                 else:
                     flash(f'Error menyimpan jurnal penyesuaian: {str(e)}', 'error')
         
-        # Get adjusting entries count for auto-numbering
-        adjusting_count_results = execute_query(
-            "SELECT COUNT(*) as count FROM journals WHERE user_id = ? AND description LIKE '[PENYESUAIAN]%'", 
+        # GET REQUEST - Tampilkan form dan history
+        
+        # Ambil data akun untuk dropdown
+        accounts = execute_query(
+            "SELECT code, name FROM accounts WHERE user_id = ? ORDER BY code", 
             (session['user_id'],), 
             fetch=True
         )
-        adjusting_count = adjusting_count_results[0]['count'] if adjusting_count_results and len(adjusting_count_results) > 0 else 0
-
-        # Get adjusting entries history
-        adjusting_entries = execute_query("""
-            SELECT j.entry_no, j.date, j.description, 
-                   STRING_AGG(a.name || ' (D: ' || jd.debit || ', C: ' || jd.credit || ')', ', ') as details
-            FROM journals j
-            LEFT JOIN journal_details jd ON j.id = jd.journal_id
-            LEFT JOIN accounts a ON jd.account_code = a.code
-            WHERE j.user_id = ? AND j.description LIKE '[PENYESUAIAN]%'
-            GROUP BY j.id, j.entry_no, j.date, j.description
-            ORDER BY j.date DESC, j.entry_no DESC
+        
+        # Hitung jumlah jurnal untuk nomor entri berikutnya
+        count_result = execute_query(
+            "SELECT COUNT(*) as count FROM adjusting_journals WHERE user_id = ?", 
+            (session['user_id'],), 
+            fetch=True
+        )
+        journal_count = count_result[0]['count'] if count_result else 0
+        
+        # Ambil riwayat jurnal penyesuaian
+        adjustings = execute_query("""
+            SELECT aj.entry_no, aj.date, aj.description, 
+                   aj.total_debit, aj.total_credit,
+                   GROUP_CONCAT(
+                       a.name || ' (D: ' || ae.debit || ', C: ' || ae.credit || ')', 
+                       ', '
+                   ) as account_details
+            FROM adjusting_journals aj
+            LEFT JOIN adjusting_entries ae ON aj.entry_no = ae.entry_no
+            LEFT JOIN accounts a ON ae.account_code = a.code
+            WHERE aj.user_id = ?
+            GROUP BY aj.entry_no, aj.date, aj.description, aj.total_debit, aj.total_credit
+            ORDER BY aj.date DESC, aj.entry_no DESC
             LIMIT 50
         """, (session['user_id'],), fetch=True)
         
-        return render_template('adjusting_entries.html', 
-                             accounts=accounts,
-                             adjusting_count=adjusting_count,
-                             today=datetime.now().strftime('%Y-%m-%d'),
-                             adjusting_entries=adjusting_entries or [])
+        return render_template('adjusting.html',
+                             accounts=accounts or [],
+                             journal_count=journal_count,
+                             adjustings=adjustings or [],
+                             today=datetime.now().strftime('%Y-%m-%d'))
                              
     except Exception as e:
-        print(f"Adjusting entries route error: {e}")
-        flash('Error loading adjusting entries page', 'error')
-        return render_template('adjusting_entries.html', 
+        print(f"Adjusting route error: {e}")
+        flash('Error loading adjusting journal page', 'error')
+        return render_template('adjusting.html',
                              accounts=[],
-                             adjusting_count=0,
-                             today=datetime.now().strftime('%Y-%m-%d'),
-                             adjusting_entries=[])
-
+                             journal_count=0,
+                             adjustings=[],
+                             today=datetime.now().strftime('%Y-%m-%d'))
+    
 # ============ CLOSING JOURNAL ENTRIES ============
 @app.route('/closing_entries', methods=['GET', 'POST'])
 def closing_entries():
@@ -2191,15 +2192,15 @@ def post_closing_trial_balance():
 
 # ============ DELETE ROUTES ============
 
-@app.route('/delete_journal/<entry_no>')
+@app.route('/delete_journal/<entry_no>', methods=['POST'])
 def delete_journal(entry_no):
     if 'user_id' not in session:
         return redirect(url_for('login'))
     
     try:
-        # Get journal ID first
+        # Get journal ID first - GUNAKAN ? UNTUK SQLite
         journal_result = execute_query(
-            "SELECT id FROM journals WHERE entry_no = %s AND user_id = %s",
+            "SELECT id FROM journals WHERE entry_no = ? AND user_id = ?",
             (entry_no, session['user_id']),
             fetch=True
         )
@@ -2207,27 +2208,55 @@ def delete_journal(entry_no):
         if journal_result and len(journal_result) > 0:
             journal_id = journal_result[0]['id']
             
-            # Delete journal details first (foreign key constraint)
-            success_details = execute_query(
-                "DELETE FROM journal_details WHERE journal_id = %s",
-                (journal_id,),
-                commit=True
-            )
+            # Start transaction
+            execute_query("BEGIN", commit=True)
             
-            if success_details:
-                # Delete journal
-                success_journal = execute_query(
-                    "DELETE FROM journals WHERE id = %s",
+            try:
+                # Get journal details untuk reverse saldo - GUNAKAN ?
+                details_result = execute_query(
+                    """SELECT jd.account_code, jd.debit, jd.credit 
+                       FROM journal_details jd 
+                       WHERE jd.journal_id = ?""",
                     (journal_id,),
-                    commit=True
+                    fetch=True
                 )
                 
-                if success_journal:
-                    flash('Jurnal berhasil dihapus!', 'success')
-                else:
-                    flash('Gagal menghapus jurnal!', 'error')
-            else:
-                flash('Gagal menghapus detail jurnal!', 'error')
+                # Reverse saldo akun - GUNAKAN ?
+                if details_result:
+                    for detail in details_result:
+                        execute_query(
+                            """UPDATE accounts 
+                               SET balance = balance - ? + ?
+                               WHERE code = ? AND user_id = ?""",
+                            (detail['debit'], detail['credit'], 
+                             detail['account_code'], session['user_id']),
+                            commit=False
+                        )
+                
+                # Delete journal details - GUNAKAN ?
+                execute_query(
+                    "DELETE FROM journal_details WHERE journal_id = ?",
+                    (journal_id,),
+                    commit=False
+                )
+                
+                # Delete journal - GUNAKAN ?
+                execute_query(
+                    "DELETE FROM journals WHERE id = ?",
+                    (journal_id,),
+                    commit=False
+                )
+                
+                # Commit transaction
+                execute_query("COMMIT", commit=True)
+                flash('Jurnal berhasil dihapus!', 'success')
+                
+            except Exception as e:
+                # Rollback on error
+                execute_query("ROLLBACK", commit=True)
+                print(f"Delete journal transaction error: {e}")
+                flash(f'Error menghapus jurnal: {str(e)}', 'error')
+                
         else:
             flash('Jurnal tidak ditemukan!', 'error')
             
@@ -2243,47 +2272,106 @@ def delete_adjusting_entry(entry_no):
         return redirect(url_for('login'))
     
     try:
-        # Get journal ID first
-        journal_result = execute_query(
-            "SELECT id FROM journals WHERE entry_no = %s AND user_id = %s",
+        # Start transaction
+        execute_query("BEGIN", commit=True)
+        
+        # 1. Ambil data entries sebelum dihapus untuk reverse saldo
+        entries = execute_query(
+            "SELECT account_code, debit, credit FROM adjusting_entries WHERE entry_no = ? AND user_id = ?",
             (entry_no, session['user_id']),
             fetch=True
         )
         
-        if journal_result and len(journal_result) > 0:
-            journal_id = journal_result[0]['id']
-            
-            # Delete journal details first
-            success_details = execute_query(
-                "DELETE FROM journal_details WHERE journal_id = %s",
-                (journal_id,),
-                commit=True
-            )
-            
-            if success_details:
-                # Delete journal
-                success_journal = execute_query(
-                    "DELETE FROM journals WHERE id = %s",
-                    (journal_id,),
-                    commit=True
+        if entries:
+            # 2. Reverse saldo akun
+            for entry in entries:
+                reverse_success = execute_query(
+                    """UPDATE accounts 
+                       SET balance = balance - ? + ?
+                       WHERE code = ? AND user_id = ?""",
+                    (entry['debit'], entry['credit'], entry['account_code'], session['user_id']),
+                    commit=False
                 )
                 
-                if success_journal:
-                    flash('Jurnal penyesuaian berhasil dihapus!', 'success')
-                else:
-                    flash('Gagal menghapus jurnal penyesuaian!', 'error')
-            else:
-                flash('Gagal menghapus detail jurnal penyesuaian!', 'error')
+                if not reverse_success:
+                    execute_query("ROLLBACK", commit=True)
+                    flash(f'Error reverse saldo akun {entry["account_code"]}!', 'error')
+                    return redirect(url_for('adjusting'))
+        
+        # 3. Hapus entries
+        delete_entries_success = execute_query(
+            "DELETE FROM adjusting_entries WHERE entry_no = ? AND user_id = ?",
+            (entry_no, session['user_id']),
+            commit=False
+        )
+        
+        if not delete_entries_success:
+            execute_query("ROLLBACK", commit=True)
+            flash('Error menghapus detail jurnal!', 'error')
+            return redirect(url_for('adjusting'))
+        
+        # 4. Hapus journal header
+        delete_journal_success = execute_query(
+            "DELETE FROM adjusting_journals WHERE entry_no = ? AND user_id = ?",
+            (entry_no, session['user_id']),
+            commit=False
+        )
+        
+        if not delete_journal_success:
+            execute_query("ROLLBACK", commit=True)
+            flash('Error menghapus header jurnal!', 'error')
+            return redirect(url_for('adjusting'))
+        
+        # 5. Commit
+        commit_success = execute_query("COMMIT", commit=True)
+        if commit_success:
+            flash('Jurnal penyesuaian berhasil dihapus!', 'success')
         else:
-            flash('Jurnal penyesuaian tidak ditemukan!', 'error')
+            flash('Error commit transaksi penghapusan!', 'error')
             
     except Exception as e:
-        print(f"Delete adjusting entry error: {e}")
-        flash(f'Error: {str(e)}', 'error')
+        execute_query("ROLLBACK", commit=True)
+        print(f"Delete adjusting error: {e}")
+        flash(f'Error menghapus jurnal penyesuaian: {str(e)}', 'error')
     
-    return redirect(url_for('adjusting_entries'))
+    return redirect(url_for('adjusting'))
 
-@app.route('/delete_cash_payment/<payment_no>')
+@app.route('/view_adjusting/<entry_no>')
+def view_adjusting(entry_no):
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    
+    try:
+        # Ambil header jurnal
+        journal = execute_query(
+            "SELECT * FROM adjusting_journals WHERE entry_no = ? AND user_id = ?",
+            (entry_no, session['user_id']),
+            fetch=True
+        )
+        
+        if not journal or len(journal) == 0:
+            flash('Jurnal penyesuaian tidak ditemukan!', 'error')
+            return redirect(url_for('adjusting'))
+        
+        # Ambil detail entries
+        entries = execute_query("""
+            SELECT ae.*, a.name as account_name
+            FROM adjusting_entries ae
+            JOIN accounts a ON ae.account_code = a.code
+            WHERE ae.entry_no = ? AND ae.user_id = ?
+            ORDER BY ae.debit DESC, ae.credit DESC
+        """, (entry_no, session['user_id']), fetch=True)
+        
+        return render_template('view_adjusting.html', 
+                             journal=journal[0], 
+                             entries=entries or [])
+                             
+    except Exception as e:
+        print(f"View adjusting error: {e}")
+        flash('Error menampilkan detail jurnal', 'error')
+        return redirect(url_for('adjusting'))
+
+@app.route('/delete_cash_payment/<payment_no>', methods=['POST'])
 def delete_cash_payment(payment_no):
     if 'user_id' not in session:
         return redirect(url_for('login'))
@@ -2300,42 +2388,73 @@ def delete_cash_payment(payment_no):
             payment_id = payment_result[0]['id']
             journal_entry_no = f"CP{payment_no}"
             
-            # Get associated journal
-            journal_result = execute_query(
-                "SELECT id FROM journals WHERE entry_no = %s AND user_id = %s",
-                (journal_entry_no, session['user_id']),
-                fetch=True
-            )
+            # Start transaction
+            execute_query("BEGIN", commit=True)
             
-            # Delete journal entries if they exist
-            if journal_result and len(journal_result) > 0:
-                journal_id = journal_result[0]['id']
-                
-                # Delete journal details first
-                execute_query(
-                    "DELETE FROM journal_details WHERE journal_id = %s",
-                    (journal_id,),
-                    commit=True
+            try:
+                # Get associated journal
+                journal_result = execute_query(
+                    "SELECT id FROM journals WHERE entry_no = %s AND user_id = %s",
+                    (journal_entry_no, session['user_id']),
+                    fetch=True
                 )
                 
-                # Delete journal
+                # Delete journal entries if they exist
+                if journal_result and len(journal_result) > 0:
+                    journal_id = journal_result[0]['id']
+                    
+                    # Get journal details untuk reverse saldo
+                    details_result = execute_query(
+                        """SELECT jd.account_code, jd.debit, jd.credit 
+                           FROM journal_details jd 
+                           WHERE jd.journal_id = %s""",
+                        (journal_id,),
+                        fetch=True
+                    )
+                    
+                    # Reverse saldo akun
+                    if details_result:
+                        for detail in details_result:
+                            execute_query(
+                                """UPDATE accounts 
+                                   SET balance = balance - %s + %s
+                                   WHERE code = %s AND user_id = %s""",
+                                (detail['debit'], detail['credit'], 
+                                 detail['account_code'], session['user_id']),
+                                commit=False
+                            )
+                    
+                    # Delete journal details first
+                    execute_query(
+                        "DELETE FROM journal_details WHERE journal_id = %s",
+                        (journal_id,),
+                        commit=False
+                    )
+                    
+                    # Delete journal
+                    execute_query(
+                        "DELETE FROM journals WHERE id = %s",
+                        (journal_id,),
+                        commit=False
+                    )
+                
+                # Delete cash payment
                 execute_query(
-                    "DELETE FROM journals WHERE id = %s",
-                    (journal_id,),
-                    commit=True
+                    "DELETE FROM cash_payments WHERE id = %s",
+                    (payment_id,),
+                    commit=False
                 )
-            
-            # Delete cash payment
-            success_payment = execute_query(
-                "DELETE FROM cash_payments WHERE id = %s",
-                (payment_id,),
-                commit=True
-            )
-            
-            if success_payment:
+                
+                # Commit transaction
+                execute_query("COMMIT", commit=True)
                 flash('Cash payment berhasil dihapus!', 'success')
-            else:
-                flash('Gagal menghapus cash payment!', 'error')
+                
+            except Exception as e:
+                # Rollback on error
+                execute_query("ROLLBACK", commit=True)
+                print(f"Delete cash payment transaction error: {e}")
+                flash(f'Error menghapus cash payment: {str(e)}', 'error')
+                
         else:
             flash('Cash payment tidak ditemukan!', 'error')
             
@@ -2345,7 +2464,7 @@ def delete_cash_payment(payment_no):
     
     return redirect(url_for('cash_payment'))
 
-@app.route('/delete_cash_receipt/<receipt_no>')
+@app.route('/delete_cash_receipt/<receipt_no>', methods=['POST'])
 def delete_cash_receipt(receipt_no):
     if 'user_id' not in session:
         return redirect(url_for('login'))
@@ -2360,44 +2479,75 @@ def delete_cash_receipt(receipt_no):
         
         if receipt_result and len(receipt_result) > 0:
             receipt_id = receipt_result[0]['id']
-            
-            # Delete corresponding journal entries
             journal_entry_no = f"CR{receipt_no}"
-            journal_result = execute_query(
-                "SELECT id FROM journals WHERE entry_no = %s AND user_id = %s",
-                (journal_entry_no, session['user_id']),
-                fetch=True
-            )
             
-            # Delete journal entries if they exist
-            if journal_result and len(journal_result) > 0:
-                journal_id = journal_result[0]['id']
-                
-                # Delete journal details first
-                execute_query(
-                    "DELETE FROM journal_details WHERE journal_id = %s",
-                    (journal_id,),
-                    commit=True
+            # Start transaction
+            execute_query("BEGIN", commit=True)
+            
+            try:
+                # Delete corresponding journal entries
+                journal_result = execute_query(
+                    "SELECT id FROM journals WHERE entry_no = %s AND user_id = %s",
+                    (journal_entry_no, session['user_id']),
+                    fetch=True
                 )
                 
-                # Delete journal
+                # Delete journal entries if they exist
+                if journal_result and len(journal_result) > 0:
+                    journal_id = journal_result[0]['id']
+                    
+                    # Get journal details untuk reverse saldo
+                    details_result = execute_query(
+                        """SELECT jd.account_code, jd.debit, jd.credit 
+                           FROM journal_details jd 
+                           WHERE jd.journal_id = %s""",
+                        (journal_id,),
+                        fetch=True
+                    )
+                    
+                    # Reverse saldo akun
+                    if details_result:
+                        for detail in details_result:
+                            execute_query(
+                                """UPDATE accounts 
+                                   SET balance = balance - %s + %s
+                                   WHERE code = %s AND user_id = %s""",
+                                (detail['debit'], detail['credit'], 
+                                 detail['account_code'], session['user_id']),
+                                commit=False
+                            )
+                    
+                    # Delete journal details first
+                    execute_query(
+                        "DELETE FROM journal_details WHERE journal_id = %s",
+                        (journal_id,),
+                        commit=False
+                    )
+                    
+                    # Delete journal
+                    execute_query(
+                        "DELETE FROM journals WHERE id = %s",
+                        (journal_id,),
+                        commit=False
+                    )
+                
+                # Delete cash receipt
                 execute_query(
-                    "DELETE FROM journals WHERE id = %s",
-                    (journal_id,),
-                    commit=True
+                    "DELETE FROM cash_receipts WHERE id = %s",
+                    (receipt_id,),
+                    commit=False
                 )
-            
-            # Delete cash receipt
-            success_receipt = execute_query(
-                "DELETE FROM cash_receipts WHERE id = %s",
-                (receipt_id,),
-                commit=True
-            )
-            
-            if success_receipt:
+                
+                # Commit transaction
+                execute_query("COMMIT", commit=True)
                 flash('Cash receipt berhasil dihapus!', 'success')
-            else:
-                flash('Gagal menghapus cash receipt!', 'error')
+                
+            except Exception as e:
+                # Rollback on error
+                execute_query("ROLLBACK", commit=True)
+                print(f"Delete cash receipt transaction error: {e}")
+                flash(f'Error menghapus cash receipt: {str(e)}', 'error')
+                
         else:
             flash('Cash receipt tidak ditemukan!', 'error')
             

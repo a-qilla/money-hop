@@ -5,20 +5,20 @@
 {% block content %}
 <div class="header">
     <h1>Jurnal Penyesuaian</h1>
-    <p>Pencatatan penyesuaian akrual dan deferral</p>
+    <p>Catat penyesuaian akhir periode akuntansi</p>
 </div>
 
 <div class="card">
     <div class="card-header">
-        <h2>Input Jurnal Penyesuaian</h2>
+        <h2>Input Jurnal Penyesuaian Baru</h2>
     </div>
     <div class="card-body">
-        <form method="POST">
+        <form method="POST" id="adjusting-form">
             <div class="form-row">
                 <div class="form-group">
                     <label class="form-label">Nomor Entri</label>
                     <input type="text" name="entry_no" class="form-control" required 
-                           value="ADJ{{ "%03d" % (adjusting_count + 1) }}">
+                           value="AJ{{ "%03d" % (journal_count + 1) }}" readonly>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Tanggal</label>
@@ -30,19 +30,7 @@
             <div class="form-group">
                 <label class="form-label">Deskripsi Penyesuaian</label>
                 <input type="text" name="description" class="form-control" required 
-                       placeholder="Contoh: Penyusutan peralatan, Beban dibayar di muka, dll">
-            </div>
-            
-            <div class="form-group">
-                <label class="form-label">Jenis Penyesuaian</label>
-                <select name="adjustment_type" class="form-control">
-                    <option value="depreciation">Penyusutan (Depresiasi)</option>
-                    <option value="prepaid">Beban Dibayar Di Muka</option>
-                    <option value="accrued">Beban Akrual</option>
-                    <option value="unearned">Pendapatan Diterima Di Muka</option>
-                    <option value="accrued_revenue">Pendapatan Akrual</option>
-                    <option value="other">Lainnya</option>
-                </select>
+                       placeholder="Contoh: Penyusutan peralatan, Akrual pendapatan, Beban dibayar di muka">
             </div>
             
             <div class="journal-entries">
@@ -50,43 +38,93 @@
                     <div style="flex: 2;">Akun</div>
                     <div style="flex: 1;">Debit</div>
                     <div style="flex: 1;">Kredit</div>
+                    <div style="flex: 0.5;"></div>
                 </div>
                 
-                {% for i in range(2) %}
-                <div class="journal-row">
-                    <div style="flex: 2;">
-                        <select name="account_code[]" class="form-control">
-                            <option value="">Pilih Akun</option>
-                            {% for account in accounts %}
-                            <option value="{{ account[0] }}">{{ account[0] }} - {{ account[1] }}</option>
-                            {% endfor %}
-                        </select>
+                <div id="journal-rows">
+                    <!-- Baris pertama (default) -->
+                    <div class="journal-row" data-row="1">
+                        <div style="flex: 2;">
+                            <select name="account_code[]" class="form-control account-select" required>
+                                <option value="">Pilih Akun</option>
+                                {% for account in accounts %}
+                                <option value="{{ account.code }}">{{ account.code }} - {{ account.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div style="flex: 1;">
+                            <input type="number" name="debit[]" class="form-control debit-input" 
+                                   step="0.01" min="0" placeholder="0.00" value="0" required>
+                        </div>
+                        <div style="flex: 1;">
+                            <input type="number" name="credit[]" class="form-control credit-input" 
+                                   step="0.01" min="0" placeholder="0.00" value="0" required>
+                        </div>
+                        <div style="flex: 0.5; display: flex; align-items: center; justify-content: center;">
+                            <button type="button" class="btn-remove-row" onclick="removeRow(1)" style="display: none;">
+                                <i class="fas fa-times text-danger"></i>
+                            </button>
+                        </div>
                     </div>
-                    <div style="flex: 1;">
-                        <input type="number" name="debit[]" class="form-control" step="0.01" min="0" value="0">
-                    </div>
-                    <div style="flex: 1;">
-                        <input type="number" name="credit[]" class="form-control" step="0.01" min="0" value="0">
+                    
+                    <!-- Baris kedua (default) -->
+                    <div class="journal-row" data-row="2">
+                        <div style="flex: 2;">
+                            <select name="account_code[]" class="form-control account-select" required>
+                                <option value="">Pilih Akun</option>
+                                {% for account in accounts %}
+                                <option value="{{ account.code }}">{{ account.code }} - {{ account.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div style="flex: 1;">
+                            <input type="number" name="debit[]" class="form-control debit-input" 
+                                   step="0.01" min="0" placeholder="0.00" value="0" required>
+                        </div>
+                        <div style="flex: 1;">
+                            <input type="number" name="credit[]" class="form-control credit-input" 
+                                   step="0.01" min="0" placeholder="0.00" value="0" required>
+                        </div>
+                        <div style="flex: 0.5; display: flex; align-items: center; justify-content: center;">
+                            <button type="button" class="btn-remove-row" onclick="removeRow(2)">
+                                <i class="fas fa-times text-danger"></i>
+                            </button>
+                        </div>
                     </div>
                 </div>
-                {% endfor %}
-            </div>
-            
-            <div class="form-group">
-                <div class="alert alert-info">
-                    <i class="fas fa-info-circle"></i>
-                    <strong>Jenis Penyesuaian Umum:</strong><br>
-                    • <strong>Penyusutan</strong>: Beban Penyusutan (Debit) vs Akumulasi Penyusutan (Kredit)<br>
-                    • <strong>Beban Dibayar Di Muka</strong>: Beban (Debit) vs Aset (Kredit)<br>
-                    • <strong>Beban Akrual</strong>: Beban (Debit) vs Hutang (Kredit)<br>
-                    • <strong>Pendapatan Diterima Di Muka</strong>: Kewajiban (Debit) vs Pendapatan (Kredit)
+                
+                <div class="form-group" style="margin-top: 1rem;">
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="addRow()">
+                        <i class="fas fa-plus"></i> Tambah Baris
+                    </button>
                 </div>
             </div>
             
-            <button type="submit" class="btn btn-warning">
-                <i class="fas fa-adjust"></i>
-                Simpan Jurnal Penyesuaian
-            </button>
+            <div class="form-group" style="margin-top: 2rem; padding: 1rem; background: var(--gray-50); border-radius: 6px;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <strong>Total Debit:</strong> <span id="total-debit" class="text-money">0.00</span><br>
+                        <strong>Total Kredit:</strong> <span id="total-credit" class="text-money">0.00</span>
+                    </div>
+                    <div id="balance-status">
+                        <span class="badge badge-danger" style="display: none;">
+                            <i class="fas fa-exclamation-triangle"></i> Tidak Balance
+                        </span>
+                        <span class="badge badge-success" style="display: none;">
+                            <i class="fas fa-check-circle"></i> Balance
+                        </span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="form-group" style="margin-top: 1.5rem;">
+                <button type="submit" class="btn btn-primary" id="submit-btn" disabled>
+                    <i class="fas fa-save"></i> Simpan Jurnal Penyesuaian
+                </button>
+                <button type="reset" class="btn btn-secondary">
+                    <i class="fas fa-redo"></i> Reset Form
+                </button>
+            </div>
         </form>
     </div>
 </div>
@@ -96,33 +134,263 @@
         <h2>Riwayat Jurnal Penyesuaian</h2>
     </div>
     <div class="card-body">
+        {% if adjustings %}
         <table class="table">
             <thead>
                 <tr>
                     <th>No. Entri</th>
                     <th>Tanggal</th>
                     <th>Deskripsi</th>
-                    <th>Detail</th>
+                    <th>Total Debit</th>
+                    <th>Total Kredit</th>
+                    <th>Status</th>
+                    <th>Aksi</th>
                 </tr>
             </thead>
             <tbody>
-                {% for entry in adjusting_entries %}
+                {% for adj in adjustings %}
                 <tr>
-                    <td>{{ entry[0] }}</td>
-                    <td>{{ entry[1] }}</td>
-                    <td>{{ entry[2] }}</td>
-                    <td>{{ entry[3] or 'No details' }}</td>
+                    <td>{{ adj.entry_no }}</td>
+                    <td>{{ adj.date }}</td>
+                    <td>{{ adj.description }}</td>
+                    <td class="text-money">{{ adj.total_debit | money_format }}</td>
+                    <td class="text-money">{{ adj.total_credit | money_format }}</td>
                     <td>
-                        <a href="{{ url_for('delete_adjusting_entry', entry_no=entry[0]) }}" 
-                        class="btn btn-danger btn-sm" 
-                        onclick="return confirm('Hapus jurnal penyesuaian {{ entry[0] }}?')">
-                            <i class="fas fa-trash"></i> Hapus
+                        {% if adj.total_debit == adj.total_credit %}
+                        <span class="badge badge-success">Balance</span>
+                        {% else %}
+                        <span class="badge badge-danger">Tidak Balance</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <form action="{{ url_for('delete_adjusting', entry_no=adj.entry_no) }}" method="POST" 
+                              onsubmit="return confirm('Hapus jurnal penyesuaian ini?')" style="display: inline;">
+                            <button type="submit" class="btn btn-danger btn-sm">
+                                <i class="fas fa-trash"></i> Hapus
+                            </button>
+                        </form>
+                        <a href="{{ url_for('view_adjusting', entry_no=adj.entry_no) }}" class="btn btn-info btn-sm">
+                            <i class="fas fa-eye"></i> Lihat
                         </a>
                     </td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
+        {% else %}
+        <div style="text-align: center; padding: 2rem; color: var(--text-secondary);">
+            <i class="fas fa-file-alt fa-3x" style="margin-bottom: 1rem;"></i>
+            <p>Belum ada jurnal penyesuaian</p>
+        </div>
+        {% endif %}
     </div>
 </div>
+
+<style>
+.journal-row {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 10px;
+    align-items: center;
+}
+
+.journal-header {
+    display: flex;
+    gap: 10px;
+    font-weight: bold;
+    padding: 10px 0;
+    border-bottom: 2px solid var(--gray-300);
+    margin-bottom: 10px;
+}
+
+.badge-success {
+    background-color: var(--success);
+    color: white;
+}
+
+.badge-danger {
+    background-color: var(--danger);
+    color: white;
+}
+
+.badge {
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.85em;
+}
+</style>
+
+<script>
+let rowCount = 2;
+
+function addRow() {
+    rowCount++;
+    const newRow = `
+        <div class="journal-row" data-row="${rowCount}">
+            <div style="flex: 2;">
+                <select name="account_code[]" class="form-control account-select" required>
+                    <option value="">Pilih Akun</option>
+                    {% for account in accounts %}
+                    <option value="{{ account.code }}">{{ account.code }} - {{ account.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div style="flex: 1;">
+                <input type="number" name="debit[]" class="form-control debit-input" 
+                       step="0.01" min="0" placeholder="0.00" value="0" required>
+            </div>
+            <div style="flex: 1;">
+                <input type="number" name="credit[]" class="form-control credit-input" 
+                       step="0.01" min="0" placeholder="0.00" value="0" required>
+            </div>
+            <div style="flex: 0.5; display: flex; align-items: center; justify-content: center;">
+                <button type="button" class="btn-remove-row" onclick="removeRow(${rowCount})">
+                    <i class="fas fa-times text-danger"></i>
+                </button>
+            </div>
+        </div>
+    `;
+    
+    document.getElementById('journal-rows').insertAdjacentHTML('beforeend', newRow);
+    attachEventListeners();
+    validateBalance();
+}
+
+function removeRow(rowNumber) {
+    if (rowCount <= 2) {
+        alert('Minimal harus ada 2 baris untuk jurnal penyesuaian');
+        return;
+    }
+    
+    const row = document.querySelector(`.journal-row[data-row="${rowNumber}"]`);
+    if (row) {
+        row.remove();
+        rowCount--;
+        renumberRows();
+        validateBalance();
+    }
+}
+
+function renumberRows() {
+    const rows = document.querySelectorAll('.journal-row');
+    rows.forEach((row, index) => {
+        const newRowNum = index + 1;
+        row.setAttribute('data-row', newRowNum);
+        row.querySelector('.btn-remove-row').setAttribute('onclick', `removeRow(${newRowNum})`);
+        
+        // Sembunyikan tombol hapus untuk baris pertama
+        if (newRowNum === 1) {
+            row.querySelector('.btn-remove-row').style.display = 'none';
+        } else {
+            row.querySelector('.btn-remove-row').style.display = 'flex';
+        }
+    });
+    rowCount = rows.length;
+}
+
+function calculateTotals() {
+    let totalDebit = 0;
+    let totalCredit = 0;
+    
+    document.querySelectorAll('.debit-input').forEach(input => {
+        totalDebit += parseFloat(input.value) || 0;
+    });
+    
+    document.querySelectorAll('.credit-input').forEach(input => {
+        totalCredit += parseFloat(input.value) || 0;
+    });
+    
+    return { totalDebit, totalCredit };
+}
+
+function validateBalance() {
+    const { totalDebit, totalCredit } = calculateTotals();
+    const diff = Math.abs(totalDebit - totalCredit);
+    const isBalanced = diff < 0.01;
+    
+    // Update display
+    document.getElementById('total-debit').textContent = totalDebit.toFixed(2);
+    document.getElementById('total-credit').textContent = totalCredit.toFixed(2);
+    
+    // Update status
+    const statusDiv = document.getElementById('balance-status');
+    const dangerBadge = statusDiv.querySelector('.badge-danger');
+    const successBadge = statusDiv.querySelector('.badge-success');
+    
+    if (isBalanced) {
+        dangerBadge.style.display = 'none';
+        successBadge.style.display = 'inline-block';
+    } else {
+        dangerBadge.style.display = 'inline-block';
+        successBadge.style.display = 'none';
+    }
+    
+    // Enable/disable submit button
+    document.getElementById('submit-btn').disabled = !isBalanced;
+    
+    // Highlight jika tidak balance
+    document.querySelectorAll('.debit-input, .credit-input').forEach(input => {
+        if (!isBalanced && (parseFloat(input.value) || 0) > 0) {
+            input.style.borderColor = 'var(--danger)';
+        } else {
+            input.style.borderColor = '';
+        }
+    });
+    
+    return isBalanced;
+}
+
+function attachEventListeners() {
+    // Event listener untuk input nilai
+    document.querySelectorAll('.debit-input, .credit-input').forEach(input => {
+        input.removeEventListener('input', validateBalance);
+        input.addEventListener('input', validateBalance);
+    });
+    
+    // Event listener untuk select akun
+    document.querySelectorAll('.account-select').forEach(select => {
+        select.removeEventListener('change', validateBalance);
+        select.addEventListener('change', validateBalance);
+    });
+}
+
+// Initialize
+document.addEventListener('DOMContentLoaded', function() {
+    attachEventListeners();
+    validateBalance();
+    
+    // Form validation sebelum submit
+    document.getElementById('adjusting-form').addEventListener('submit', function(e) {
+        if (!validateBalance()) {
+            e.preventDefault();
+            alert('Total debit dan kredit harus sama!');
+            return false;
+        }
+        
+        // Validasi minimal satu debit dan satu kredit
+        const hasDebit = Array.from(document.querySelectorAll('.debit-input'))
+            .some(input => parseFloat(input.value) > 0);
+        const hasCredit = Array.from(document.querySelectorAll('.credit-input'))
+            .some(input => parseFloat(input.value) > 0);
+        
+        if (!hasDebit || !hasCredit) {
+            e.preventDefault();
+            alert('Jurnal harus memiliki minimal satu akun debit dan satu akun kredit!');
+            return false;
+        }
+        
+        // Validasi akun tidak boleh sama
+        const selectedAccounts = Array.from(document.querySelectorAll('.account-select'))
+            .map(select => select.value)
+            .filter(value => value !== '');
+        
+        const uniqueAccounts = [...new Set(selectedAccounts)];
+        if (selectedAccounts.length !== uniqueAccounts.length) {
+            e.preventDefault();
+            alert('Akun yang sama tidak boleh digunakan lebih dari satu kali dalam jurnal yang sama!');
+            return false;
+        }
+    });
+});
+</script>
 {% endblock %}
