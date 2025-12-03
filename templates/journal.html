@@ -8,6 +8,17 @@
     <p>Catat transaksi harian</p>
 </div>
 
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        {% for category, message in messages %}
+        <div class="alert alert-{{ category }} alert-dismissible">
+            {{ message }}
+            <button type="button" class="close" data-dismiss="alert">&times;</button>
+        </div>
+        {% endfor %}
+    {% endif %}
+{% endwith %}
+
 <div class="card">
     <div class="card-header">
         <h2>Input Jurnal Baru</h2>
@@ -51,53 +62,169 @@
                         </select>
                     </div>
                     <div style="flex: 1;">
-                        <input type="number" name="debit[]" class="form-control" step="0.01" min="0" value="0">
+                        <input type="number" name="debit[]" class="form-control" step="0.01" min="0" placeholder="0.00" value="0">
                     </div>
                     <div style="flex: 1;">
-                        <input type="number" name="credit[]" class="form-control" step="0.01" min="0" value="0">
+                        <input type="number" name="credit[]" class="form-control" step="0.01" min="0" placeholder="0.00" value="0">
                     </div>
                 </div>
                 {% endfor %}
             </div>
             
-            <button type="submit" class="btn btn-primary">Simpan Jurnal</button>
+            <div class="form-group">
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <strong>Perhatian:</strong> Total debit harus sama dengan total kredit
+                </div>
+            </div>
+            
+            <button type="submit" class="btn btn-primary">
+                <i class="fas fa-save"></i> Simpan Jurnal
+            </button>
+            <button type="reset" class="btn btn-secondary">
+                <i class="fas fa-redo"></i> Reset
+            </button>
         </form>
     </div>
 </div>
 
 <div class="card">
     <div class="card-header">
-        <h2>Riwayat Jurnal</h2>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h2 style="margin: 0;">Riwayat Jurnal</h2>
+            <span class="badge badge-primary">{{ journals|length }} jurnal</span>
+        </div>
     </div>
     <div class="card-body">
-        <table class="table">
-            <thead>
-                <tr>
-                    <th>No. Entri</th>
-                    <th>Tanggal</th>
-                    <th>Deskripsi</th>
-                    <th>Detail</th>
-                    <th>Aksi</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for journal in journals %}
-                <tr>
-                    <td>{{ journal['entry_no'] }}</td>
-                    <td>{{ journal['date'] }}</td>
-                    <td>{{ journal['description'] }}</td>
-                    <td>{{ journal['details'] or 'No details' }}</td>
-                    <td>
-                        <form action="{{ url_for('delete_journal', entry_no=journal['entry_no']) }}" method="POST" style="display: inline;">
-                            <button type="submit" class="btn btn-danger btn-sm">
-                                <i class="fas fa-trash"></i> Hapus
-                            </button>
-                        </form>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+        {% if journals %}
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead class="thead-light">
+                    <tr>
+                        <th>No. Entri</th>
+                        <th>Tanggal</th>
+                        <th>Deskripsi</th>
+                        <th>Detail Akun</th>
+                        <th style="width: 120px;">Aksi</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for journal in journals %}
+                    <tr>
+                        <td><strong>{{ journal['entry_no'] }}</strong></td>
+                        <td>{{ journal['date'] }}</td>
+                        <td>{{ journal['description'] }}</td>
+                        <td>
+                            <small class="text-muted">
+                                {{ journal['details'] or 'Tidak ada detail' }}
+                            </small>
+                        </td>
+                        <td>
+                            <!-- FIX: Tambah onsubmit untuk konfirmasi -->
+                            <form action="{{ url_for('delete_journal', entry_no=journal['entry_no']) }}" 
+                                  method="POST" 
+                                  onsubmit="return confirm('Yakin hapus jurnal {{ journal.entry_no }}?')"
+                                  style="display: inline;">
+                                <button type="submit" class="btn btn-danger btn-sm" title="Hapus">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </form>
+                            <a href="{{ url_for('view_journal', entry_no=journal['entry_no']) }}" 
+                               class="btn btn-info btn-sm" title="Lihat detail">
+                                <i class="fas fa-eye"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5">
+            <i class="fas fa-book fa-4x text-muted mb-3"></i>
+            <h4 class="text-muted">Belum ada jurnal</h4>
+            <p class="text-muted">Mulai dengan membuat jurnal pertama Anda</p>
+        </div>
+        {% endif %}
     </div>
 </div>
+
+<style>
+.journal-row {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 10px;
+    align-items: center;
+}
+
+.journal-header {
+    display: flex;
+    gap: 10px;
+    font-weight: bold;
+    padding: 10px 0;
+    border-bottom: 2px solid #dee2e6;
+    margin-bottom: 10px;
+    background-color: #f8f9fa;
+    border-radius: 4px;
+    padding: 10px;
+}
+
+.alert {
+    padding: 12px 15px;
+    border-radius: 6px;
+    margin: 15px 0;
+    border-left: 4px solid;
+}
+
+.alert-warning {
+    background-color: #fff3cd;
+    border-color: #ffc107;
+    color: #856404;
+}
+
+.alert-success {
+    background-color: #d4edda;
+    border-color: #28a745;
+    color: #155724;
+}
+
+.alert-danger {
+    background-color: #f8d7da;
+    border-color: #dc3545;
+    color: #721c24;
+}
+
+.table th {
+    background-color: #f8f9fa;
+    border-bottom: 2px solid #dee2e6;
+}
+
+.btn-sm {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.875rem;
+    border-radius: 4px;
+    margin-right: 5px;
+}
+
+.badge {
+    padding: 5px 10px;
+    border-radius: 10px;
+    font-size: 0.85em;
+}
+
+.text-muted {
+    color: #6c757d !important;
+}
+
+.form-control {
+    border-radius: 4px;
+    border: 1px solid #ced4da;
+    padding: 8px 12px;
+}
+
+.form-control:focus {
+    border-color: #80bdff;
+    box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+}
+</style>
 {% endblock %}
