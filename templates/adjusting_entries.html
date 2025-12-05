@@ -13,7 +13,7 @@
         <h2>Input Jurnal Penyesuaian Baru</h2>
     </div>
     <div class="card-body">
-        <form method="POST" id="adjusting-form">
+        <form method="POST" id="adjusting-form" action="{{ url_for('adjusting_entries') }}">
             <div class="form-row">
                 <div class="form-group">
                     <label class="form-label">Nomor Entri</label>

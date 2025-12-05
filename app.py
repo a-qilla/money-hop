@@ -1048,7 +1048,7 @@ def delete_account():
 
 # ============ ADJUSTING JOURNAL ENTRIES ============
 @app.route('/adjusting_entries', methods=['GET', 'POST'])
-def adjusting():
+def adjusting_entries():  # ⭐ GANTI NAMA FUNCTION DARI 'adjusting' KE 'adjusting_entries'
     if 'user_id' not in session:
         return redirect(url_for('login'))
     
@@ -1067,7 +1067,7 @@ def adjusting():
             # Validasi minimal 2 akun
             if len(account_codes) < 2:
                 flash('Minimal harus ada 2 akun', 'error')
-                return redirect(url_for('adjusting'))
+                return redirect(url_for('adjusting_entries'))  # ⭐ UBAH KE adjusting_entries
             
             # Validasi akun tidak boleh kosong
             valid_entries = []
@@ -1090,12 +1090,12 @@ def adjusting():
             
             if len(valid_entries) < 2:
                 flash('Minimal harus ada 2 akun dengan nilai debit/kredit', 'error')
-                return redirect(url_for('adjusting'))
+                return redirect(url_for('adjusting_entries'))  # ⭐ UBAH KE adjusting_entries
             
             # Validasi balance
             if abs(total_debit - total_credit) > 0.01:
                 flash(f'Total debit ({total_debit:,.2f}) dan kredit ({total_credit:,.2f}) harus sama!', 'error')
-                return redirect(url_for('adjusting'))
+                return redirect(url_for('adjusting_entries'))  # ⭐ UBAH KE adjusting_entries
             
             try:
                 # Start transaction
@@ -1105,7 +1105,7 @@ def adjusting():
                 journal_success = execute_query(
                     """INSERT INTO adjusting_journals 
                        (entry_no, date, description, total_debit, total_credit, user_id) 
-                       VALUES (?, ?, ?, ?, ?, ?)""",
+                       VALUES (%s, %s, %s, %s, %s, %s)""",  # ⭐ GUNAKAN %s JIKA MySQL
                     (entry_no, date, description, total_debit, total_credit, session['user_id']),
                     commit=False
                 )
@@ -1113,14 +1113,14 @@ def adjusting():
                 if not journal_success:
                     execute_query("ROLLBACK", commit=True)
                     flash('Error menyimpan header jurnal penyesuaian!', 'error')
-                    return redirect(url_for('adjusting'))
+                    return redirect(url_for('adjusting_entries'))  # ⭐ UBAH KE adjusting_entries
                 
                 # 2. Insert adjusting entries
                 for entry in valid_entries:
                     detail_success = execute_query(
                         """INSERT INTO adjusting_entries 
                            (entry_no, account_code, debit, credit, user_id) 
-                           VALUES (?, ?, ?, ?, ?)""",
+                           VALUES (%s, %s, %s, %s, %s)""",  # ⭐ GUNAKAN %s
                         (entry_no, entry['account_code'], entry['debit'], entry['credit'], session['user_id']),
                         commit=False
                     )
@@ -1128,13 +1128,13 @@ def adjusting():
                     if not detail_success:
                         execute_query("ROLLBACK", commit=True)
                         flash('Error menyimpan detail penyesuaian!', 'error')
-                        return redirect(url_for('adjusting'))
+                        return redirect(url_for('adjusting_entries'))  # ⭐ UBAH KE adjusting_entries
                     
                     # 3. Update account balance
                     update_success = execute_query(
                         """UPDATE accounts 
-                           SET balance = balance + ? - ?
-                           WHERE code = ? AND user_id = ?""",
+                           SET balance = balance + %s - %s
+                           WHERE code = %s AND user_id = %s""",  # ⭐ GUNAKAN %s
                         (entry['debit'], entry['credit'], entry['account_code'], session['user_id']),
                         commit=False
                     )
@@ -1142,7 +1142,7 @@ def adjusting():
                     if not update_success:
                         execute_query("ROLLBACK", commit=True)
                         flash(f'Error update saldo akun {entry["account_code"]}!', 'error')
-                        return redirect(url_for('adjusting'))
+                        return redirect(url_for('adjusting_entries'))  # ⭐ UBAH KE adjusting_entries
                 
                 # 4. Commit transaction
                 commit_success = execute_query("COMMIT", commit=True)
@@ -1164,14 +1164,14 @@ def adjusting():
         
         # Ambil data akun untuk dropdown
         accounts = execute_query(
-            "SELECT code, name FROM accounts WHERE user_id = ? ORDER BY code", 
+            "SELECT code, name FROM accounts WHERE user_id = %s ORDER BY code",  # ⭐ GUNAKAN %s
             (session['user_id'],), 
             fetch=True
         )
         
         # Hitung jumlah jurnal untuk nomor entri berikutnya
         count_result = execute_query(
-            "SELECT COUNT(*) as count FROM adjusting_journals WHERE user_id = ?", 
+            "SELECT COUNT(*) as count FROM adjusting_journals WHERE user_id = %s",  # ⭐ GUNAKAN %s
             (session['user_id'],), 
             fetch=True
         )
@@ -1182,13 +1182,13 @@ def adjusting():
             SELECT aj.entry_no, aj.date, aj.description, 
                    aj.total_debit, aj.total_credit,
                    GROUP_CONCAT(
-                       a.name || ' (D: ' || ae.debit || ', C: ' || ae.credit || ')', 
+                       CONCAT(a.name, ' (D: ', ae.debit, ', C: ', ae.credit, ')'), 
                        ', '
                    ) as account_details
             FROM adjusting_journals aj
             LEFT JOIN adjusting_entries ae ON aj.entry_no = ae.entry_no
             LEFT JOIN accounts a ON ae.account_code = a.code
-            WHERE aj.user_id = ?
+            WHERE aj.user_id = %s
             GROUP BY aj.entry_no, aj.date, aj.description, aj.total_debit, aj.total_credit
             ORDER BY aj.date DESC, aj.entry_no DESC
             LIMIT 50
@@ -2741,6 +2741,29 @@ def delete_cash_receipt(receipt_no):
         flash(f'Error: {str(e)}', 'error')
     
     return redirect(url_for('cash_receipt'))
+
+@app.route('/delete_inventory/<code>')
+def delete_inventory(code):
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    
+    try:
+        success = execute_query(
+            "DELETE FROM inventory WHERE code = %s AND user_id = %s",
+            (code, session['user_id']),
+            commit=True
+        )
+        
+        if success:
+            flash('Barang berhasil dihapus!', 'success')
+        else:
+            flash('Gagal menghapus barang!', 'error')
+            
+    except Exception as e:
+        print(f"Delete inventory error: {e}")
+        flash(f'Error: {str(e)}', 'error')
+    
+    return redirect(url_for('inventory'))
 
 @app.route('/logout')
 def logout():
