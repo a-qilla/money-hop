@@ -2742,29 +2742,6 @@ def delete_cash_receipt(receipt_no):
     
     return redirect(url_for('cash_receipt'))
 
-@app.route('/delete_inventory/<code>')
-def delete_inventory(code):
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-    
-    try:
-        success = execute_query(
-            "DELETE FROM inventory WHERE code = %s AND user_id = %s",
-            (code, session['user_id']),
-            commit=True
-        )
-        
-        if success:
-            flash('Barang berhasil dihapus!', 'success')
-        else:
-            flash('Gagal menghapus barang!', 'error')
-            
-    except Exception as e:
-        print(f"Delete inventory error: {e}")
-        flash(f'Error: {str(e)}', 'error')
-    
-    return redirect(url_for('inventory'))
-
 @app.route('/logout')
 def logout():
     session.clear()
