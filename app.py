@@ -398,6 +398,116 @@ def get_account_balance(account_code):
     except Exception as e:
         print(f"Error calculating balance: {e}")
         return 0.0
+def update_inventory(code, quantity_change, user_id, price=None, name=None):
+    """
+    Update inventory quantity.
+    quantity_change: positive = tambah, negative = kurang
+    """
+    try:
+        # Cek apakah barang sudah ada
+        existing = execute_query(
+            "SELECT id, qty, price, name FROM inventory WHERE code = %s AND user_id = %s",
+            (code, user_id),
+            fetch=True
+        )
+        
+        if existing and len(existing) > 0:
+            item = existing[0]
+            new_qty = item['qty'] + quantity_change
+            
+            if new_qty < 0:
+                return False, "Stok tidak mencukupi!"
+            
+            # Jika quantity_change negatif (pengurangan), kita tidak update harga
+            if quantity_change > 0 and price is not None:
+                # Untuk penambahan, update harga jika diberikan
+                success = execute_query(
+                    "UPDATE inventory SET qty = %s, price = COALESCE(%s, price), name = COALESCE(%s, name) WHERE id = %s",
+                    (new_qty, price, name, item['id']),
+                    commit=True
+                )
+            else:
+                # Untuk pengurangan, hanya update quantity
+                success = execute_query(
+                    "UPDATE inventory SET qty = %s WHERE id = %s",
+                    (new_qty, item['id']),
+                    commit=True
+                )
+                
+            if success:
+                return True, "Stok berhasil diupdate"
+            else:
+                return False, "Gagal update stok"
+        else:
+            # Jika barang tidak ada dan quantity_change positif (menambah barang baru)
+            if quantity_change > 0 and price is not None and name is not None:
+                # Tambah barang baru
+                success = execute_query(
+                    "INSERT INTO inventory (code, name, qty, price, user_id) VALUES (%s, %s, %s, %s, %s)",
+                    (code, name, quantity_change, price, user_id),
+                    commit=True
+                )
+                if success:
+                    return True, "Barang baru berhasil ditambahkan"
+                else:
+                    return False, "Gagal menambahkan barang baru"
+            else:
+                return False, "Barang tidak ditemukan"
+                
+    except Exception as e:
+        print(f"Update inventory error: {e}")
+        return False, f"Error: {str(e)}"
+
+
+def process_transaction_inventory(transaction_type, items, user_id):
+    """
+    Process inventory changes based on transaction.
+    transaction_type: 'purchase', 'return', atau 'sale'
+    items: list of dict dengan keys: code, name, qty, price
+    """
+    try:
+        results = []
+        for item in items:
+            code = item.get('code')
+            qty = safe_int(item.get('qty', 0))
+            price = safe_float(item.get('price', 0))
+            name = item.get('name', '')
+            
+            if transaction_type == 'purchase':
+                # Untuk pembelian: tambah stok
+                quantity_change = qty
+                update_price = price
+            elif transaction_type == 'return' or transaction_type == 'sale':
+                # Untuk retur/penjualan: kurangi stok
+                quantity_change = -qty
+                update_price = None  # Tidak update harga saat retur/penjualan
+            else:
+                return False, f"Tipe transaksi tidak valid: {transaction_type}"
+            
+            # Update inventory
+            success, message = update_inventory(
+                code=code,
+                quantity_change=quantity_change,
+                user_id=user_id,
+                price=update_price,
+                name=name
+            )
+            
+            results.append({
+                'code': code,
+                'success': success,
+                'message': message
+            })
+            
+            if not success:
+                # Jika ada yang gagal, bisa rollback atau berhenti
+                return False, f"Gagal update inventory untuk {code}: {message}"
+        
+        return True, "Semua transaksi berhasil diproses"
+        
+    except Exception as e:
+        print(f"Transaction inventory error: {e}")
+        return False, f"Error: {str(e)}"
 # ============ JINJA2 FILTERS ============
 @app.template_filter('money_format')
 def money_format_filter(amount):
@@ -1820,57 +1930,15 @@ def cash_receipt():
                          today=datetime.now().strftime('%Y-%m-%d'),
                          receipts=receipts or [])
 
-@app.route('/inventory', methods=['GET', 'POST'])
+# ==============================
+# ROUTES INVENTORY
+# ==============================
+
+@app.route('/inventory')
 def inventory():
+    """Halaman utama inventory"""
     if 'user_id' not in session:
         return redirect(url_for('login'))
-    
-    if request.method == 'POST':
-        code = request.form['code']
-        name = request.form['name']
-        qty = safe_int(request.form['qty'])
-        price = safe_float(request.form['price'])
-        
-        if not code or not name or qty <= 0 or price <= 0:
-            flash('Isi data barang dengan benar!', 'error')
-            return redirect(url_for('inventory'))
-        
-        try:
-            # Check if item already exists
-            existing_items = execute_query(
-                "SELECT id, qty FROM inventory WHERE code = %s AND user_id = %s",
-                (code, session['user_id']),
-                fetch=True
-            )
-            
-            if existing_items and len(existing_items) > 0:
-                # Update existing item
-                existing = existing_items[0]
-                new_qty = existing['qty'] + qty
-                success = execute_query(
-                    "UPDATE inventory SET qty = %s, price = %s, name = %s WHERE id = %s",
-                    (new_qty, price, name, existing['id']),
-                    commit=True
-                )
-                if success:
-                    flash('Barang berhasil diupdate!', 'success')
-                else:
-                    flash('Gagal mengupdate barang!', 'error')
-            else:
-                # Insert new item
-                success = execute_query(
-                    "INSERT INTO inventory (code, name, qty, price, user_id) VALUES (%s, %s, %s, %s, %s)",
-                    (code, name, qty, price, session['user_id']),
-                    commit=True
-                )
-                if success:
-                    flash('Barang berhasil ditambahkan!', 'success')
-                else:
-                    flash('Gagal menambahkan barang!', 'error')
-                    
-        except Exception as e:
-            print(f"Inventory error: {e}")
-            flash(f'Error: {str(e)}', 'error')
     
     # Get inventory items
     items = execute_query(
@@ -1880,6 +1948,123 @@ def inventory():
     )
     
     return render_template('inventory.html', items=items or [])
+
+
+@app.route('/inventory/add', methods=['POST'])
+def add_inventory():
+    """Tambah atau update barang"""
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    
+    code = request.form['code'].strip()
+    name = request.form['name'].strip()
+    qty = safe_int(request.form['qty'])
+    price = safe_float(request.form['price'])
+    
+    if not code or not name or qty <= 0 or price <= 0:
+        flash('Isi data barang dengan benar!', 'error')
+        return redirect(url_for('inventory'))
+    
+    try:
+        # Gunakan fungsi helper untuk menambah/update
+        success, message = update_inventory(
+            code=code,
+            quantity_change=qty,
+            user_id=session['user_id'],
+            price=price,
+            name=name
+        )
+        
+        if success:
+            flash(message, 'success')
+        else:
+            flash(message, 'error')
+            
+    except Exception as e:
+        print(f"Inventory error: {e}")
+        flash(f'Error: {str(e)}', 'error')
+    
+    return redirect(url_for('inventory'))
+
+
+@app.route('/inventory/reduce', methods=['POST'])
+def reduce_inventory():
+    """Kurangi stok barang"""
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    
+    code = request.form.get('code')
+    name = request.form.get('name')
+    reduce_qty = safe_int(request.form.get('reduce_qty', 1))
+    
+    if not code or reduce_qty <= 0:
+        flash('Quantity pengurangan tidak valid!', 'error')
+        return redirect(url_for('inventory'))
+    
+    # Gunakan fungsi helper dengan quantity_change negatif
+    success, message = update_inventory(
+        code=code,
+        quantity_change=-reduce_qty,  # Negatif untuk mengurangi
+        user_id=session['user_id'],
+        price=None,  # Tidak update harga saat mengurangi
+        name=name
+    )
+    
+    if success:
+        flash(f'Stok {name} berkurang {reduce_qty} unit. {message}', 'success')
+    else:
+        flash(message, 'error')
+    
+    return redirect(url_for('inventory'))
+
+
+@app.route('/inventory/delete/<code>')
+def delete_inventory(code):
+    """Hapus barang dari inventory"""
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    
+    try:
+        success = execute_query(
+            "DELETE FROM inventory WHERE code = %s AND user_id = %s",
+            (code, session['user_id']),
+            commit=True
+        )
+        
+        if success:
+            flash('Barang berhasil dihapus!', 'success')
+        else:
+            flash('Gagal menghapus barang!', 'error')
+            
+    except Exception as e:
+        print(f"Delete inventory error: {e}")
+        flash(f'Error: {str(e)}', 'error')
+    
+    return redirect(url_for('inventory'))
+
+
+@app.route('/inventory/check/<code>')
+def check_inventory(code):
+    """Cek stok barang (API endpoint)"""
+    if 'user_id' not in session:
+        return jsonify({'error': 'Unauthorized'}), 401
+    
+    item = execute_query(
+        "SELECT code, name, qty, price FROM inventory WHERE code = %s AND user_id = %s",
+        (code, session['user_id']),
+        fetch=True
+    )
+    
+    if item and len(item) > 0:
+        return jsonify({
+            'exists': True,
+            'code': item[0]['code'],
+            'name': item[0]['name'],
+            'qty': item[0]['qty'],
+            'price': float(item[0]['price'])
+        })
+    else:
+        return jsonify({'exists': False})
 
 @app.route('/reports')
 def reports():
